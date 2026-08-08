@@ -193,14 +193,19 @@ function draw(){
   // 폰트 크기를 글자 수로 추정하면 한글이 라틴보다 넓어 타일 밖으로 넘치고,
   // 작은 타일에서 이름끼리 겹쳐 읽을 수 없게 된다. 실제 렌더 폭을 재서
   // 한글명 → 티커 → 생략 순으로 물러난다.
-  const short=d=>(d.sym||'').replace(/-USD$/,'').split('.')[0];
+  // 폴백 순서: 정식명 → 축약명 → 라틴 티커 → 생략.
+  // 티커가 숫자면(한국 005930, 일본 7203) 화면에 숫자만 뜨므로 후보에서 뺀다.
+  const latin=d=>{
+    const t=(d.sym||'').replace(/-USD$/,'').split('.')[0];
+    return /^[A-Za-z][A-Za-z0-9&.\-]*$/.test(t)?t:'';
+  };
   g.each(function(d){
     const w=d.x1-d.x0, h=d.y1-d.y0;
     if(w<24||h<16) return;
     const n=d3.select(this);
     const pad=8;
 
-    for(const text of [d.data.name, short(d.data)]){
+    for(const text of [d.data.name, d.data.short, latin(d.data)]){
       if(!text) continue;
       const fs=Math.min(h*0.34, 17, w/(text.length*0.62));
       if(fs<7.5) continue;
