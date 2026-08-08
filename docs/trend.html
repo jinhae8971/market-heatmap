@@ -89,6 +89,14 @@
     <svg class="ln" id="ln" viewBox="0 0 360 300" preserveAspectRatio="none"></svg>
     <div class="read" id="read"></div>
   </div>
+  <h2>미국 국채 금리</h2>
+  <div class="chart">
+    <svg class="ln" id="yl" viewBox="0 0 360 170" preserveAspectRatio="none"
+         style="height:170px"></svg>
+    <div class="read" id="yread"></div>
+  </div>
+  <p class="hint" id="invnote"></p>
+
   <p class="hint">기간 시작을 100으로 맞춰 그린다. 지수 레벨이 아니라 상대 성과를 보는 화면이다.
      차트를 손가락으로 문지르면 그 시점 값이 아래에 뜬다.</p>
 
@@ -111,7 +119,11 @@ const PALETTE={
   '^TWII':'#3fbf9f',
   'GC=F':'#d9a520','SI=F':'#c3ccd4','CL=F':'#a6763a',
 };
-const PERIODS=[['1M',21],['3M',63],['6M',126],['YTD',null],['1Y',252],['3Y',9999]];
+const YCOL={'^TNX':'#e8edf2','2YY=F':'#f0b429'};
+/* 역전 구간은 두 차트에 같은 x 좌표로 겹쳐 그린다.
+   금리 패널에만 표시하면 "그때 주가는 어땠나"를 눈으로 못 잇는다. */
+const INV_FILL='rgba(226,57,74,.13)';
+const PERIODS=[['1M',21],['3M',63],['6M',126],['YTD',null],['1Y',252],['3Y',756],['5Y',9999]];
 
 let D=null, per='1Y', mode='local', on=new Set(), cursor=null;
 
@@ -188,6 +200,7 @@ function render(){
   }).filter(Boolean);
 
   drawChart(dates, lines);
+  drawYields(s0);
   drawTable(s0);
 }
 
@@ -205,7 +218,7 @@ function drawChart(dates, lines){
   const X=i=>P.l+i/(dates.length-1||1)*(W-P.l-P.r);
   const Y=v=>H-P.b-(v-lo+pad)/((hi-lo)+pad*2)*(H-P.t-P.b);
 
-  let g='';
+  let g=bandsSvg(invBands(startIndex(), dates.length), X, P.t, H-P.b);
   // 100 기준선 — 이 위가 상승, 아래가 하락
   if(lo<=100&&hi>=100)
     g+=`<line x1="${P.l}" y1="${Y(100)}" x2="${W-P.r}" y2="${Y(100)}"
@@ -265,6 +278,74 @@ function drawChart(dates, lines){
   svg.onpointermove=move;
   svg.onpointerdown=move;
   svg.onpointerleave=()=>{cursor=null;drawChart(dates,lines);};
+}
+
+/* 보이는 구간에 걸치는 역전 밴드만 잘라 반환한다 */
+function invBands(s0, n){
+  return (D.inversions||[]).map(([a,b])=>[a-s0,b-s0])
+    .filter(([a,b])=>b>=0 && a<=n-1)
+    .map(([a,b])=>[Math.max(0,a),Math.min(n-1,b)]);
+}
+
+function bandsSvg(bands, X, top, bottom){
+  return bands.map(([a,b])=>{
+    const x1=X(a), x2=X(b);
+    return `<rect x="${x1}" y="${top}" width="${Math.max(1.2,x2-x1)}"
+      height="${bottom-top}" fill="${INV_FILL}"/>`;
+  }).join('');
+}
+
+function drawYields(s0){
+  const svg=document.getElementById('yl');
+  const note=document.getElementById('invnote');
+  if(!D.yields||!D.yields.length){ svg.innerHTML=''; note.textContent=''; return; }
+
+  const W=360,H=170,P={l:30,r:34,t:10,b:20};
+  const n=D.dates.length-s0;
+  const dates=D.dates.slice(s0);
+  const lines=D.yields.map(y=>({...y, v:y.values.slice(s0)}));
+  const all=lines.flatMap(l=>l.v).filter(v=>v!==null);
+  if(!all.length){ svg.innerHTML=''; return; }
+  const lo=Math.min(...all), hi=Math.max(...all);
+  const pad=(hi-lo)*0.12||0.2;
+  const X=i=>P.l+i/(n-1||1)*(W-P.l-P.r);
+  const Y=v=>H-P.b-(v-lo+pad)/((hi-lo)+pad*2)*(H-P.t-P.b);
+
+  let g=bandsSvg(invBands(s0,n), X, P.t, H-P.b);
+  [lo,(lo+hi)/2,hi].forEach(v=>{
+    g+=`<text x="${P.l-4}" y="${Y(v)+3}" fill="#8b97a4" font-size="8"
+         text-anchor="end">${v.toFixed(1)}</text>`;});
+  [0,Math.floor(n/2),n-1].forEach(i=>{
+    g+=`<text x="${X(i)}" y="${H-6}" fill="#8b97a4" font-size="8"
+         text-anchor="middle">${dates[i].slice(2,7)}</text>`;});
+
+  lines.forEach(l=>{
+    let d='',started=false;
+    l.v.forEach((v,i)=>{ if(v===null) return;
+      d+=(started?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' '; started=true;});
+    g+=`<path d="${d}" fill="none" stroke="${YCOL[l.sym]||'#888'}"
+         stroke-width="1.5"/>`;
+    const last=[...l.v].reverse().find(v=>v!==null);
+    if(last!==undefined)
+      g+=`<text x="${W-P.r+3}" y="${Y(last)+3}" fill="${YCOL[l.sym]||'#888'}"
+           font-size="8.5">${last.toFixed(2)}</text>`;
+  });
+  svg.innerHTML=g;
+
+  const sp=(D.spread||[]).slice(s0).filter(v=>v!==null);
+  const cur=sp.length?sp[sp.length-1]:null;
+  document.getElementById('yread').innerHTML=
+    lines.map(l=>`<span style="color:${YCOL[l.sym]}">${l.name} ${
+      ([...l.v].reverse().find(v=>v!==null)??0).toFixed(2)}%</span>`).join('')+
+    (cur===null?'':`<span><b style="color:${cur<0?'var(--up)':'var(--txt)'}">10Y−2Y ${
+      (cur>=0?'+':'')+cur.toFixed(2)}%p</b></span>`);
+
+  const bands=invBands(s0,n);
+  note.innerHTML = cur===null ? '' :
+    (cur<0
+      ? `<b style="color:var(--up)">현재 금리 역전 상태</b> — 붉은 구간이 10년물이 2년물보다 낮았던 기간이다.`
+      : `현재는 정상(10Y > 2Y). 붉은 구간이 과거 역전 기간이며, 위 지수 차트에도 같은 위치로 겹쳐 표시된다.`)
+    + (bands.length?` 이 기간 내 역전 ${bands.length}구간.`:' 이 기간 내 역전 없음.');
 }
 
 function drawTable(s0){
