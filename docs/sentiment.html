@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>투자자 센티멘트 · 마켓 히트맵</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#14181d; --line:#232a32; --txt:#e8edf2; --dim:#8b97a4;
+    --greed:#e2394a; --fear:#2e8fd6; --mid:#8b97a4;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:'IBM Plex Sans KR',system-ui,sans-serif;line-height:1.6}
+  .wrap{max-width:760px;margin:0 auto;padding:12px 14px 80px}
+
+  .mode{display:flex;gap:6px;margin-bottom:12px}
+  .mode a{flex:1;text-align:center;padding:8px;border-radius:9px;text-decoration:none;
+    border:1px solid var(--line);background:var(--panel);color:var(--dim);font-size:13px}
+  .mode a.on{background:var(--txt);color:var(--bg);border-color:var(--txt);font-weight:600}
+
+  header{display:flex;align-items:baseline;gap:9px;margin-bottom:12px}
+  h1{font-size:18px;margin:0;letter-spacing:-.02em}
+  .stamp{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--dim)}
+
+  /* 시그니처: 공포–탐욕 눈금자. 두 시장을 같은 자에 올려야 비교가 성립한다 */
+  .rulers{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:16px 14px 10px}
+  .ruler{margin-bottom:20px}
+  .ruler:last-child{margin-bottom:6px}
+  .rtop{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+  .rtop b{font-size:15px}
+  .rtop span{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600}
+  .track{position:relative;height:12px;border-radius:6px;
+    background:linear-gradient(90deg,#2e8fd6 0%,#1d4a6b 25%,#2b3138 50%,#7a2733 75%,#e2394a 100%)}
+  .pin{position:absolute;top:-5px;width:3px;height:22px;background:#fff;border-radius:2px;
+    box-shadow:0 0 0 2px rgba(0,0,0,.55)}
+  .rlab{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);
+    margin-top:6px;font-family:'IBM Plex Mono',monospace}
+
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.13em;color:var(--dim);
+    margin:26px 0 8px;font-weight:600}
+  .segs{display:flex;gap:5px;margin-bottom:10px}
+  .seg{padding:6px 13px;border-radius:999px;border:1px solid var(--line);
+    background:var(--panel);color:var(--dim);font-size:12.5px;cursor:pointer;font-family:inherit}
+  .seg.on{background:var(--txt);color:var(--bg);border-color:var(--txt);font-weight:600}
+
+  .comp{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:12px 14px}
+  .crow{display:grid;grid-template-columns:112px 1fr 40px;gap:9px;align-items:center;
+    padding:8px 0;border-bottom:1px solid var(--line)}
+  .crow:last-child{border-bottom:0}
+  .crow .nm{font-size:12.5px}
+  .crow .nm em{display:block;font-style:normal;font-size:10px;color:var(--dim)}
+  .cbar{height:14px;background:#10141a;border-radius:3px;position:relative}
+  .cbar .f{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+  .cbar .mid{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--line)}
+  .crow .v{font-family:'IBM Plex Mono',monospace;font-size:12.5px;text-align:right}
+
+  .chart{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:12px 10px 6px;margin-top:10px}
+  svg{width:100%;height:180px;display:block;overflow:visible}
+  svg text{font-family:'IBM Plex Mono',monospace}
+  .hint{font-size:11.5px;color:var(--dim);margin:10px 2px 0;line-height:1.6}
+  footer{margin-top:26px;padding-top:12px;border-top:1px solid var(--line);
+    font-size:10.5px;color:var(--dim);font-family:'IBM Plex Mono',monospace;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mode">
+    <a href="index.html">히트맵</a>
+    <a href="semi.html">산업</a>
+    <a href="trend.html">트렌드</a>
+    <a href="sentiment.html" class="on">센티멘트</a>
+  </div>
+
+  <header><h1>투자자 센티멘트</h1><span class="stamp" id="stamp">로딩</span></header>
+
+  <div class="rulers" id="rulers"></div>
+
+  <h2>구성요소</h2>
+  <div class="segs" id="mkt"></div>
+  <div class="comp" id="comp"></div>
+  <p class="hint" id="chint"></p>
+
+  <h2>추이 · 최근 6개월</h2>
+  <div class="chart"><svg id="hist" viewBox="0 0 340 180" preserveAspectRatio="none"></svg></div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const APP_VERSION="1.7.0";
+if('serviceWorker' in navigator)
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+
+const COL={'미국':'#e8edf2','한국':'#e2394a'};
+let D=null, mkt='미국';
+
+/* 점수 → 말. 숫자만 있으면 60이 높은 건지 낮은 건지 매번 헷갈린다. */
+function label(v){
+  if(v===null) return '–';
+  if(v>=75) return '강한 탐욕';
+  if(v>=60) return '탐욕';
+  if(v>=40) return '중립';
+  if(v>=25) return '공포';
+  return '강한 공포';
+}
+const scoreCol=v=>v===null?'var(--dim)':
+  v>=60?'var(--greed)':v<=40?'var(--fear)':'var(--mid)';
+
+fetch('sentiment.json?t='+Date.now()).then(r=>r.json()).then(d=>{
+  D=d;
+  const kst=new Date(d.generated_at).toLocaleString('ko-KR',
+    {timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  document.getElementById('stamp').textContent=kst+' KST';
+
+  document.getElementById('rulers').innerHTML=d.markets.map(m=>`
+    <div class="ruler">
+      <div class="rtop"><b>${m.name}</b>
+        <span style="color:${scoreCol(m.score)}">${m.score===null?'–':m.score}
+          <em style="font-style:normal;font-size:12px;font-family:inherit"> ${label(m.score)}</em>
+        </span></div>
+      <div class="track">${m.score===null?'':
+        `<div class="pin" style="left:calc(${m.score}% - 1.5px)"></div>`}</div>
+      <div class="rlab"><span>0 공포</span><span>50</span><span>탐욕 100</span></div>
+    </div>`).join('');
+
+  seg('mkt', d.markets.map(m=>[m.name,m.name]), mkt, v=>{mkt=v;comps();hist();});
+  comps(); hist();
+
+  document.getElementById('foot').innerHTML=
+    d.note+'<br>v'+APP_VERSION+' · 생성 '+d.generated_at;
+}).catch(()=>{document.getElementById('stamp').textContent=
+  'sentiment.json을 불러오지 못했습니다.';});
+
+function seg(id,opts,cur,cb){
+  const el=document.getElementById(id); el.innerHTML='';
+  opts.forEach(([v,l])=>{
+    const b=document.createElement('button');
+    b.className='seg'+(v===cur?' on':''); b.textContent=l;
+    b.onclick=()=>{[...el.children].forEach(c=>c.classList.remove('on'));
+      b.classList.add('on'); cb(v);};
+    el.appendChild(b);
+  });
+}
+
+function comps(){
+  const m=D.markets.find(x=>x.name===mkt);
+  document.getElementById('comp').innerHTML=m.components.map(c=>`
+    <div class="crow">
+      <div class="nm">${c.label}<em>${c.note}</em></div>
+      <div class="cbar"><div class="mid"></div>
+        <div class="f" style="width:${c.score}%;background:${scoreCol(c.score)}"></div></div>
+      <div class="v" style="color:${scoreCol(c.score)}">${c.score}</div>
+    </div>`).join('');
+  document.getElementById('chint').textContent=
+    mkt==='한국'
+      ? '한국은 VKOSPI·신용잔고·투자자예탁금을 무료로 받을 수 없어 구성요소가 미국보다 적다. 그만큼 해석의 폭도 좁게 잡는 편이 안전하다.'
+      : '각 구성요소는 2년 백분위다. 50이면 지난 2년의 딱 중간, 90이면 상위 10% 수준으로 위험을 사고 있다는 뜻이다.';
+}
+
+function hist(){
+  const rows=(D.history||{})[mkt]||[];
+  const svg=document.getElementById('hist');
+  if(rows.length<2){ svg.innerHTML=`<text x="170" y="90" fill="#8b97a4"
+    text-anchor="middle" font-size="11">추이 데이터가 부족합니다</text>`; return; }
+  const W=340,H=180,P={l:26,r:10,t:10,b:20};
+  const X=i=>P.l+i/(rows.length-1)*(W-P.l-P.r);
+  const Y=v=>H-P.b-v/100*(H-P.t-P.b);
+
+  let g='';
+  // 40·60 밴드 — 이 사이가 중립. 밖으로 나간 구간이 판단 지점이다
+  g+=`<rect x="${P.l}" y="${Y(60)}" width="${W-P.l-P.r}" height="${Y(40)-Y(60)}"
+       fill="#ffffff" fill-opacity=".04"/>`;
+  [0,25,50,75,100].forEach(v=>{
+    g+=`<line x1="${P.l}" y1="${Y(v)}" x2="${W-P.r}" y2="${Y(v)}"
+         stroke="#232a32" stroke-width=".8"/>`;
+    g+=`<text x="${P.l-4}" y="${Y(v)+3}" fill="#8b97a4" font-size="8"
+         text-anchor="end">${v}</text>`;});
+
+  let d='';
+  rows.forEach((r,i)=>{ d+=(i?'L':'M')+X(i).toFixed(1)+' '+Y(r.v).toFixed(1)+' '; });
+  g+=`<path d="${d}" fill="none" stroke="${COL[mkt]}" stroke-width="1.6"/>`;
+  const last=rows[rows.length-1];
+  g+=`<circle cx="${X(rows.length-1)}" cy="${Y(last.v)}" r="3" fill="${COL[mkt]}"/>`;
+  [0,Math.floor(rows.length/2),rows.length-1].forEach(i=>{
+    g+=`<text x="${X(i)}" y="${H-6}" fill="#8b97a4" font-size="8"
+         text-anchor="${i===0?'start':i===rows.length-1?'end':'middle'}">${rows[i].d.slice(2,7)}</text>`;});
+  svg.innerHTML=g;
+}
+</script>
+</body>
+</html>

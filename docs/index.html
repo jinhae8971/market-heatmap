@@ -27,7 +27,7 @@
 
   .mode{display:flex;gap:6px;padding:10px 14px 0;flex:none}
   .mode a{flex:1;text-align:center;padding:7px;border-radius:9px;text-decoration:none;
-    border:1px solid var(--line);background:var(--panel);color:var(--dim);font-size:13.5px}
+    border:1px solid var(--line);background:var(--panel);color:var(--dim);font-size:13px}
   .mode a.on{background:var(--txt);color:var(--bg);border-color:var(--txt);font-weight:600}
   header{padding:8px 14px 0;flex:none}
   .ttl{display:flex;align-items:baseline;gap:9px}
@@ -83,6 +83,7 @@
     <a href="index.html" class="on">히트맵</a>
     <a href="semi.html">산업</a>
     <a href="trend.html">트렌드</a>
+    <a href="sentiment.html">센티멘트</a>
   </div>
   <header>
     <div class="ttl"><h1>마켓 히트맵</h1><span id="stamp">로딩</span></div>
@@ -116,7 +117,7 @@
 </div>
 
 <script>
-const APP_VERSION="1.6.0";
+const APP_VERSION="1.7.0";
 if('serviceWorker' in navigator)
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js')
     .catch(e=>console.warn('SW 등록 실패',e)));
