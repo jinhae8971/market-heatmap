@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 import yfinance as yf
 
-from universe import MARKETS, PENCE
+from universe import MARKETS, PENCE, SHORT
 
 OUT = "docs/heatmap.json"
 FX_SYMBOLS = {"KRW": "KRW=X", "JPY": "JPY=X", "EUR": "EURUSD=X",
@@ -54,7 +54,8 @@ def fetch_one(arg):
     if not last or not prev or not cap:
         print(f"[fetch] {sym} 데이터 결측 — 제외")
         return None
-    return {"sym": sym, "name": name, "sector": sector, "ccy": ccy,
+    return {"sym": sym, "name": name, "short": SHORT.get(sym, name),
+            "sector": sector, "ccy": ccy,
             "price": round(float(last), 2), "cap_local": float(cap),
             "chg": round((float(last) / float(prev) - 1) * 100, 2)}
 
@@ -79,6 +80,7 @@ def crypto(limit: int = 40) -> list[dict]:
             continue
         out.append({
             "sym": c["symbol"].upper(), "name": c["name"],
+            "short": c["symbol"].upper(),
             "sector": "스테이블코인" if c["symbol"].lower() in
                       ("usdt", "usdc", "dai", "usde", "fdusd") else "암호화폐",
             "ccy": "USD", "price": c.get("current_price") or 0,
