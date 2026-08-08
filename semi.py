@@ -89,6 +89,18 @@ def fx_table() -> dict[str, float]:
     return out
 
 
+def ytd(series: pd.Series) -> float | None:
+    """연초 대비 수익률(%). 기준은 올해 첫 거래일 종가."""
+    s = series.dropna()
+    if s.empty:
+        return None
+    year = dt.date.today().year
+    this_year = s[s.index >= pd.Timestamp(f"{year}-01-01", tz=s.index.tz)]
+    if this_year.empty or len(this_year) < 2:
+        return None
+    return round(float(s.iloc[-1] / this_year.iloc[0] - 1) * 100, 2)
+
+
 def ret(series: pd.Series, days: int) -> float | None:
     """days 거래일 전 대비 수익률(%). 데이터가 모자라면 None."""
     s = series.dropna()
@@ -129,6 +141,7 @@ def fetch(args):
         "ccy": info.get("currency") or "USD",
         "cap_local": info.get("marketCap"),
         "d1": r[1], "d5": r[5], "d20": r[20], "d60": r[60],
+        "ytd": ytd(s),
         "rs20": rs,
         "from_high": round((px / float(hi52) - 1) * 100, 1) if hi52 else None,
         "vol20": vol,
@@ -140,12 +153,14 @@ def fetch(args):
 
 def main() -> None:
     syms = [t[0] for tier in TIERS.values() for t in tier]
-    raw = yf.download([*syms, BENCH], period="6mo", progress=False,
+    # YTD를 계산해야 하므로 연초부터 확보한다. 6개월로는 1월이 안 들어온다.
+    raw = yf.download([*syms, BENCH], period="1y", progress=False,
                       auto_adjust=True)["Close"]
     hist = {c: raw[c] for c in raw.columns}
 
     bench = hist.get(BENCH)
     bench_ret = {d: ret(bench, d) for d in (1, 5, 20, 60)} if bench is not None else {}
+    bench_ytd = ytd(bench) if bench is not None else None
 
     jobs = [(sym, name, short, country, tier, hist, bench_ret)
             for tier, rows in TIERS.items() for sym, name, short, country in rows]
@@ -186,6 +201,7 @@ def main() -> None:
         "level": payload["bench"]["level"],
         "d1": bench_ret.get(1), "d5": bench_ret.get(5),
         "d20": bench_ret.get(20), "d60": bench_ret.get(60),
+        "ytd": bench_ytd,
     }
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
