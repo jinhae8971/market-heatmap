@@ -43,7 +43,16 @@ RATIOS_US = [
 RATIOS_KR = [
     ("코스닥 / 코스피", "^KQ11", "^KS11", "개인 비중이 높은 코스닥 선호"),
     ("코스피 / 금", "^KS11", "GC=F", "안전자산 대비 주식 선호"),
+    ("한국 / 신흥국", "EWY", "EEM", "신흥국 중 한국을 골라 사는가"),
+    ("코스닥150 / 코스피200", "229200.KS", "069500.KS", "중소형 성장 선호"),
 ]
+
+# 레버리지·인버스 ETF 거래대금 비율 — 한국 개인 투기 심리의 대리지표.
+# 설문 대신 실제 베팅 방향을 본다. 레버리지 쪽이 커질수록 위험선호.
+LEV_KR = ("122630.KS", "114800.KS")
+
+# 실현변동성 — VKOSPI를 무료로 받을 수 없어 지수 자체의 20일 변동성으로 대신한다
+RV_KR = "^KS11"
 
 VOL_US = "^VIX"
 FX_KR = "KRW=X"          # 원화 약세 = 위험회피
@@ -88,8 +97,35 @@ def breadth(px: pd.DataFrame, symbols: list[str]) -> tuple[float | None, float |
     return round(above / n * 100, 1), round(up / n * 100, 1)
 
 
+def lev_ratio(px: pd.DataFrame, vol: pd.DataFrame,
+              lev: str, inv: str) -> pd.Series | None:
+    """레버리지 ETF 거래대금 / (레버리지+인버스). 0.5보다 크면 상승 베팅 우위."""
+    try:
+        a = (px[lev] * vol[lev]).dropna()
+        b = (px[inv] * vol[inv]).dropna()
+    except KeyError:
+        return None
+    idx = a.index.intersection(b.index)
+    if len(idx) < 60:
+        return None
+    tot = a.reindex(idx) + b.reindex(idx)
+    return (a.reindex(idx) / tot.replace(0, np.nan)).dropna()
+
+
+def realized_vol(px: pd.DataFrame, sym: str, window: int = 20) -> pd.Series | None:
+    """실현변동성(연율). 지수 옵션 변동성을 못 받을 때 쓰는 대용치."""
+    try:
+        s = px[sym].dropna()
+    except KeyError:
+        return None
+    if len(s) < window + 40:
+        return None
+    return (s.pct_change().rolling(window).std() * np.sqrt(252) * 100).dropna()
+
+
 def build_market(name: str, px: pd.DataFrame, ratios, breadth_syms,
-                 vol_sym: str | None, fx_sym: str | None) -> dict:
+                 vol_sym: str | None, fx_sym: str | None,
+                 vol_df: pd.DataFrame | None = None) -> dict:
     comps = []
 
     for label, num, den, note in ratios:
@@ -128,6 +164,31 @@ def build_market(name: str, px: pd.DataFrame, ratios, breadth_syms,
                               "value": round(float(f.iloc[-1]), 1), "d20": None})
         except KeyError:
             pass
+
+    if name == "한국":
+        lev = lev_ratio(px, vol_df, *LEV_KR) if vol_df is not None else None
+        if lev is not None:
+            r = pct_rank(lev)
+            if r is not None:
+                comps.append({"label": "레버리지 / 인버스", "score": r,
+                              "note": "개인이 어느 쪽에 베팅하는가",
+                              "value": round(float(lev.iloc[-1]) * 100, 1),
+                              "d20": None})
+        rv = realized_vol(px, RV_KR)
+        if rv is not None:
+            r = pct_rank(rv)
+            if r is not None:
+                # 실현변동성이 비정상적으로 크면 데이터 이상일 수 있다.
+                # 최근 최대 일간 변동을 함께 실어 화면에서 판단할 수 있게 한다.
+                try:
+                    mx = float(px[RV_KR].dropna().pct_change().tail(20).abs().max() * 100)
+                except Exception:
+                    mx = None
+                comps.append({"label": "실현변동성 (역방향)", "score": round(100 - r, 1),
+                              "note": "코스피 20일 변동성 (VKOSPI 대용)",
+                              "value": round(float(rv.iloc[-1]), 1), "d20": None,
+                              "flag": (None if mx is None or mx < 8
+                                       else f"최근 20일 최대 일간 변동 {mx:.1f}% — 데이터 확인 필요")})
 
     ma, adv = breadth(px, breadth_syms)
     if ma is not None:
@@ -172,17 +233,21 @@ def main() -> None:
     us_syms = [t[0] for t in universe.US][:30]
 
     need = sorted({s for _, a, b, _ in RATIOS_US + RATIOS_KR for s in (a, b)}
-                  | {VOL_US, FX_KR} | set(kr_syms) | set(us_syms))
-    px = yf.download(need, period=LOOKBACK, progress=False, auto_adjust=True)["Close"]
+                  | {VOL_US, FX_KR, RV_KR} | set(LEV_KR) | set(kr_syms) | set(us_syms))
+    raw = yf.download(need, period=LOOKBACK, progress=False, auto_adjust=True)
+    px = raw["Close"]
+    vol_df = raw["Volume"]
 
     us = build_market("미국", px, RATIOS_US, us_syms, VOL_US, None)
-    kr = build_market("한국", px, RATIOS_KR, kr_syms, None, FX_KR)
+    kr = build_market("한국", px, RATIOS_KR, kr_syms, None, FX_KR, vol_df)
 
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "markets": [us, kr],
         "history": {"미국": history(px, RATIOS_US, VOL_US),
                     "한국": history(px, RATIOS_KR, None)},
+        "kr_note": ("VKOSPI·신용잔고·투자자예탁금은 무료 API로 받을 수 없어 "
+                    "레버리지/인버스 거래대금 비율과 실현변동성으로 대신한다."),
         "note": ("설문 기반 심리지표가 아니라 가격에 드러난 위험선호를 계산한 대리지표다. "
                  "구성요소마다 2년 백분위를 0~100으로 환산해 평균했다."),
     }

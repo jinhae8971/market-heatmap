@@ -96,7 +96,7 @@
 </div>
 
 <script>
-const APP_VERSION="1.7.0";
+const APP_VERSION="1.7.1";
 if('serviceWorker' in navigator)
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 
@@ -159,10 +159,11 @@ function comps(){
       <div class="cbar"><div class="mid"></div>
         <div class="f" style="width:${c.score}%;background:${scoreCol(c.score)}"></div></div>
       <div class="v" style="color:${scoreCol(c.score)}">${c.score}</div>
-    </div>`).join('');
+    </div>${c.flag?`<div style="font-size:10.5px;color:#e2394a;padding:0 0 8px 2px">
+      ⚠ ${c.flag}</div>`:''}`).join('');
   document.getElementById('chint').textContent=
     mkt==='한국'
-      ? '한국은 VKOSPI·신용잔고·투자자예탁금을 무료로 받을 수 없어 구성요소가 미국보다 적다. 그만큼 해석의 폭도 좁게 잡는 편이 안전하다.'
+      ? (D.kr_note||'')+' 레버리지/인버스 거래대금 비율은 개인이 어느 방향에 실제로 베팅했는지를 보여준다.'
       : '각 구성요소는 2년 백분위다. 50이면 지난 2년의 딱 중간, 90이면 상위 10% 수준으로 위험을 사고 있다는 뜻이다.';
 }
 
