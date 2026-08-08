@@ -35,13 +35,18 @@ INDICES = [
     ("^N225", "닛케이 225", "JP", "JPY"),
     ("1306.T", "토픽스 (ETF)", "JP", "JPY"),
     ("^TWII", "대만 가권", "TW", "TWD"),
+    # 원자재 — 주식 지수와 함께 보면 위험선호/인플레 국면이 드러난다.
+    # 전부 달러 표시라 USD 환산 토글의 영향을 받지 않는다.
+    ("GC=F", "금", "CM", "USD"),
+    ("SI=F", "은", "CM", "USD"),
+    ("CL=F", "WTI 원유", "CM", "USD"),
 ]
 
 # 국가별 통화 → USD 환산에 쓸 환율 심볼 (USD/XXX 호가이므로 나눈다)
 FX = {"KRW": "KRW=X", "JPY": "JPY=X", "TWD": "TWD=X"}
 
 # 화면 첫 진입 시 켜 둘 지수 — 너무 많으면 선이 엉킨다
-DEFAULT_ON = {"^GSPC", "^SOX", "^KS11", "^N225", "^TWII"}
+DEFAULT_ON = {"^GSPC", "^SOX", "^KS11", "^N225", "^TWII", "GC=F"}
 
 
 def series_of(frame: pd.DataFrame, sym: str) -> pd.Series | None:
