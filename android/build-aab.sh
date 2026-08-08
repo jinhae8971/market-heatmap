@@ -13,7 +13,7 @@ set -euo pipefail
 BT="${ANDROID_HOME}/build-tools/34.0.0"
 PLAT="${ANDROID_HOME}/platforms/android-35/android.jar"
 KS="${KEYSTORE:-upload.keystore}"
-KS_PASS="${KEYSTORE_PASS:-heatmap2026}"
+KS_PASS="${KEYSTORE_PASS:?KEYSTORE_PASS 환경변수로 키스토어 비밀번호를 넘기세요}"
 ALIAS="${KEY_ALIAS:-upload}"
 OUT="../release/market-heatmap-1.0.aab"
 
