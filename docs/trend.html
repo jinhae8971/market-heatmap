@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>시장 트렌드 · 마켓 히트맵</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#14181d; --line:#232a32; --txt:#e8edf2; --dim:#8b97a4;
+    --up:#e2394a; --dn:#2e8fd6;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:'IBM Plex Sans KR',system-ui,sans-serif;line-height:1.6}
+  .wrap{max-width:760px;margin:0 auto;padding:12px 14px 80px}
+
+  .mode{display:flex;gap:6px;margin-bottom:12px}
+  .mode a{flex:1;text-align:center;padding:8px;border-radius:9px;text-decoration:none;
+    border:1px solid var(--line);background:var(--panel);color:var(--dim);font-size:13.5px}
+  .mode a.on{background:var(--txt);color:var(--bg);border-color:var(--txt);font-weight:600}
+
+  header{display:flex;align-items:baseline;gap:9px;margin-bottom:10px}
+  h1{font-size:18px;margin:0;letter-spacing:-.02em}
+  .stamp{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--dim)}
+
+  .segs{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;margin-bottom:9px}
+  .segs::-webkit-scrollbar{display:none}
+  .seg{flex:none;padding:6px 13px;border-radius:999px;border:1px solid var(--line);
+    background:var(--panel);color:var(--dim);font-size:12.5px;cursor:pointer;font-family:inherit}
+  .seg.on{background:var(--txt);color:var(--bg);border-color:var(--txt);font-weight:600}
+
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 14px}
+  .chip{display:flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;
+    border:1px solid var(--line);background:var(--panel);color:var(--dim);
+    font-size:12px;cursor:pointer;font-family:inherit}
+  .chip.on{color:var(--txt);border-color:currentColor}
+  .chip i{width:9px;height:9px;border-radius:50%;display:block;flex:none;opacity:.35}
+  .chip.on i{opacity:1}
+
+  .chart{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:12px 10px 6px;position:relative}
+  svg.ln{width:100%;height:300px;display:block;overflow:visible;touch-action:pan-y}
+  svg.ln text{font-family:'IBM Plex Mono',monospace}
+  .read{display:flex;justify-content:space-between;align-items:baseline;
+    padding:9px 4px 2px;border-top:1px solid var(--line);margin-top:8px;
+    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--dim);
+    flex-wrap:wrap;gap:4px}
+  .read b{color:var(--txt)}
+  .hint{font-size:11.5px;color:var(--dim);margin:9px 2px 0;line-height:1.6}
+
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.13em;color:var(--dim);
+    margin:26px 0 8px;font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{font-family:'IBM Plex Mono',monospace;font-size:9.5px;text-transform:uppercase;
+    letter-spacing:.07em;color:var(--dim);font-weight:500;text-align:right;
+    padding:7px 4px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th:first-child{text-align:left}
+  td{padding:9px 4px;border-bottom:1px solid var(--line);text-align:right;
+    font-family:'IBM Plex Mono',monospace}
+  td:first-child{text-align:left;font-family:inherit;font-size:13px;
+    display:flex;align-items:center;gap:7px}
+  td i{width:9px;height:9px;border-radius:50%;display:block;flex:none}
+  .flag{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--dim);
+    border:1px solid var(--line);border-radius:3px;padding:0 4px}
+  footer{margin-top:26px;padding-top:12px;border-top:1px solid var(--line);
+    font-size:10.5px;color:var(--dim);font-family:'IBM Plex Mono',monospace;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mode">
+    <a href="index.html">히트맵</a>
+    <a href="semi.html">반도체</a>
+    <a href="trend.html" class="on">트렌드</a>
+  </div>
+
+  <header><h1>시장 트렌드</h1><span class="stamp" id="stamp">로딩</span></header>
+
+  <div class="segs" id="periods"></div>
+  <div class="segs" id="ccy"></div>
+  <div class="chips" id="chips"></div>
+
+  <div class="chart">
+    <svg class="ln" id="ln" viewBox="0 0 360 300" preserveAspectRatio="none"></svg>
+    <div class="read" id="read"></div>
+  </div>
+  <p class="hint">기간 시작을 100으로 맞춰 그린다. 지수 레벨이 아니라 상대 성과를 보는 화면이다.
+     차트를 손가락으로 문지르면 그 시점 값이 아래에 뜬다.</p>
+
+  <h2>기간 성과</h2>
+  <table><thead id="thead"></thead><tbody id="tbody"></tbody></table>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+if('serviceWorker' in navigator)
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+
+/* 색은 국가별 계열로 묶는다. 지수 10개에 무작위 10색을 쓰면
+   "미국 것끼리 어떻게 다른가"를 눈으로 못 따라간다. */
+const PALETTE={
+  '^GSPC':'#e8edf2','^IXIC':'#9fb3c8','^DJI':'#5d7a94','^RUT':'#41586e','^SOX':'#f0b429',
+  '^KS11':'#e2394a','^KQ11':'#a8324a',
+  '^N225':'#4aa3df','1306.T':'#2a6f97',
+  '^TWII':'#3fbf9f',
+};
+const PERIODS=[['1M',21],['3M',63],['6M',126],['YTD',null],['1Y',252],['3Y',9999]];
+
+let D=null, per='1Y', mode='local', on=new Set(), cursor=null;
+
+const pct=v=>(v>=0?'+':'')+v.toFixed(1)+'%';
+const col=v=>v>=0?'var(--up)':'var(--dn)';
+
+fetch('trend.json?t='+Date.now()).then(r=>r.json()).then(d=>{
+  D=d;
+  const kst=new Date(d.generated_at).toLocaleString('ko-KR',
+    {timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  document.getElementById('stamp').textContent=kst+' KST';
+  d.items.forEach(i=>{ if(i.on) on.add(i.sym); });
+
+  seg('periods',PERIODS.map(p=>[p[0],p[0]]),per,v=>{per=v;cursor=null;render();});
+  seg('ccy',[['local','현지통화'],['usd','USD 환산']],mode,v=>{mode=v;render();});
+
+  document.getElementById('chips').innerHTML=d.items.map(i=>
+    `<button class="chip${on.has(i.sym)?' on':''}" data-s="${i.sym}"
+       style="${on.has(i.sym)?'color:'+PALETTE[i.sym]:''}">
+       <i style="background:${PALETTE[i.sym]||'#888'}"></i>${i.name}</button>`).join('');
+  document.querySelectorAll('.chip').forEach(el=>el.onclick=()=>{
+    const s=el.dataset.s;
+    if(on.has(s)){ on.delete(s); el.classList.remove('on'); el.style.color=''; }
+    else { on.add(s); el.classList.add('on'); el.style.color=PALETTE[s]||''; }
+    render();
+  });
+
+  document.getElementById('foot').innerHTML=
+    `USD 환산 = 현지 지수 ÷ 달러 환율. 원화·엔화가 빠지면 현지 상승분이 깎인다<br>`+
+    `환율 ${Object.entries(d.fx).map(([k,v])=>k+' '+v).join(' · ')} · 생성 ${d.generated_at}`;
+  render();
+}).catch(()=>{document.getElementById('stamp').textContent=
+  'trend.json을 불러오지 못했습니다. 수집 워크플로우 실행 후 다시 열어 주세요.';});
+
+function seg(id,opts,cur,cb){
+  const el=document.getElementById(id); el.innerHTML='';
+  opts.forEach(([v,label])=>{
+    const b=document.createElement('button');
+    b.className='seg'+(v===cur?' on':''); b.textContent=label;
+    b.onclick=()=>{[...el.children].forEach(c=>c.classList.remove('on'));
+      b.classList.add('on'); cb(v);};
+    el.appendChild(b);
+  });
+}
+
+/* 기간 시작 인덱스. YTD만 날짜 기준이고 나머지는 거래일 수 기준이다. */
+function startIndex(){
+  const n=D.dates.length;
+  if(per==='YTD'){
+    const y=new Date().getFullYear();
+    const i=D.dates.findIndex(d=>d>=`${y}-01-01`);
+    return i<0?0:i;
+  }
+  const days=PERIODS.find(p=>p[0]===per)[1];
+  return Math.max(0, n-1-days);
+}
+
+function seriesOf(item){
+  const arr=(mode==='usd'&&item.usd)?item.usd:item.local;
+  return arr;
+}
+
+function render(){
+  const s0=startIndex();
+  const dates=D.dates.slice(s0);
+  const picked=D.items.filter(i=>on.has(i.sym));
+
+  const lines=picked.map(i=>{
+    const arr=seriesOf(i).slice(s0);
+    const base=arr.find(v=>v!==null);
+    if(!base) return null;
+    return {sym:i.sym, name:i.name, country:i.country,
+            norm:arr.map(v=>v===null?null:v/base*100)};
+  }).filter(Boolean);
+
+  drawChart(dates, lines);
+  drawTable(s0);
+}
+
+function drawChart(dates, lines){
+  const svg=document.getElementById('ln');
+  const W=360,H=300,P={l:30,r:34,t:10,b:20};
+  if(!lines.length){
+    svg.innerHTML=`<text x="180" y="150" fill="#8b97a4" text-anchor="middle"
+      font-size="11">지수를 하나 이상 선택하세요</text>`;
+    document.getElementById('read').innerHTML=''; return;
+  }
+  const all=lines.flatMap(l=>l.norm).filter(v=>v!==null);
+  const lo=Math.min(...all), hi=Math.max(...all);
+  const pad=(hi-lo)*0.06||2;
+  const X=i=>P.l+i/(dates.length-1||1)*(W-P.l-P.r);
+  const Y=v=>H-P.b-(v-lo+pad)/((hi-lo)+pad*2)*(H-P.t-P.b);
+
+  let g='';
+  // 100 기준선 — 이 위가 상승, 아래가 하락
+  if(lo<=100&&hi>=100)
+    g+=`<line x1="${P.l}" y1="${Y(100)}" x2="${W-P.r}" y2="${Y(100)}"
+         stroke="#3a444f" stroke-dasharray="3 3"/>`;
+  [lo,(lo+hi)/2,hi].forEach(v=>{
+    g+=`<text x="${P.l-4}" y="${Y(v)+3}" fill="#8b97a4" font-size="8"
+         text-anchor="end">${v.toFixed(0)}</text>`;});
+  [0,Math.floor(dates.length/2),dates.length-1].forEach(i=>{
+    g+=`<text x="${X(i)}" y="${H-6}" fill="#8b97a4" font-size="8"
+         text-anchor="middle">${dates[i].slice(2,7)}</text>`;});
+
+  lines.forEach(l=>{
+    let d='',started=false;
+    l.norm.forEach((v,i)=>{
+      if(v===null) return;
+      d+=(started?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' ';
+      started=true;
+    });
+    g+=`<path d="${d}" fill="none" stroke="${PALETTE[l.sym]||'#888'}"
+         stroke-width="1.6" stroke-linejoin="round"/>`;
+    const last=[...l.norm].reverse().find(v=>v!==null);
+    if(last!==undefined)
+      g+=`<text x="${W-P.r+3}" y="${Y(last)+3}" fill="${PALETTE[l.sym]||'#888'}"
+           font-size="8.5">${(last-100).toFixed(0)}%</text>`;
+  });
+
+  if(cursor!==null && cursor>=0 && cursor<dates.length){
+    g+=`<line x1="${X(cursor)}" y1="${P.t}" x2="${X(cursor)}" y2="${H-P.b}"
+         stroke="#8b97a4" stroke-width="1"/>`;
+    lines.forEach(l=>{
+      const v=l.norm[cursor];
+      if(v!==null&&v!==undefined)
+        g+=`<circle cx="${X(cursor)}" cy="${Y(v)}" r="2.6"
+             fill="${PALETTE[l.sym]||'#888'}"/>`;
+    });
+  }
+  svg.innerHTML=g;
+
+  const readout=document.getElementById('read');
+  if(cursor===null){
+    readout.innerHTML=`<span>시작 100 기준 · ${dates[0]} ~ ${dates[dates.length-1]}</span>`
+      +`<span>${lines.length}개 지수</span>`;
+  }else{
+    readout.innerHTML=`<span><b>${dates[cursor]}</b></span>`+
+      lines.map(l=>{const v=l.norm[cursor];
+        return v===null?'':`<span style="color:${PALETTE[l.sym]}">${l.name} ${pct(v-100)}</span>`;
+      }).join('');
+  }
+
+  const move=e=>{
+    const r=svg.getBoundingClientRect();
+    const cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left;
+    const frac=(cx/r.width*W-P.l)/(W-P.l-P.r);
+    cursor=Math.max(0,Math.min(dates.length-1,Math.round(frac*(dates.length-1))));
+    drawChart(dates,lines);
+  };
+  svg.onpointermove=move;
+  svg.onpointerdown=move;
+  svg.onpointerleave=()=>{cursor=null;drawChart(dates,lines);};
+}
+
+function drawTable(s0){
+  document.getElementById('thead').innerHTML=
+    `<tr><th>지수</th><th>기간</th><th>YTD</th><th>고점대비</th><th>변동성</th></tr>`;
+  const yStart=(()=>{const y=new Date().getFullYear();
+    const i=D.dates.findIndex(d=>d>=`${y}-01-01`); return i<0?0:i;})();
+
+  const rows=D.items.map(i=>{
+    const arr=seriesOf(i);
+    const win=arr.slice(s0).filter(v=>v!==null);
+    const yr=arr.slice(yStart).filter(v=>v!==null);
+    const last=win[win.length-1];
+    const y252=arr.slice(Math.max(0,arr.length-252)).filter(v=>v!==null);
+    const hi=y252.length?Math.max(...y252):null;
+    // 변동성: 최근 60거래일 일간수익률 표준편차 연율
+    const tail=arr.slice(-61).filter(v=>v!==null);
+    let vol=null;
+    if(tail.length>20){
+      const rets=[]; for(let k=1;k<tail.length;k++) rets.push(tail[k]/tail[k-1]-1);
+      const m=rets.reduce((a,b)=>a+b,0)/rets.length;
+      const sd=Math.sqrt(rets.reduce((a,b)=>a+(b-m)**2,0)/rets.length);
+      vol=sd*Math.sqrt(252)*100;
+    }
+    return {i, ret:win.length>1?(last/win[0]-1)*100:null,
+            ytd:yr.length>1?(yr[yr.length-1]/yr[0]-1)*100:null,
+            fromHigh:hi?(last/hi-1)*100:null, vol};
+  }).sort((a,b)=>(b.ret??-999)-(a.ret??-999));
+
+  document.getElementById('tbody').innerHTML=rows.map(r=>`
+    <tr style="opacity:${on.has(r.i.sym)?1:.45}">
+      <td><i style="background:${PALETTE[r.i.sym]||'#888'}"></i>
+          <span class="flag">${r.i.country}</span>${r.i.name}</td>
+      <td style="color:${col(r.ret??0)}">${r.ret===null?'–':pct(r.ret)}</td>
+      <td style="color:${col(r.ytd??0)}">${r.ytd===null?'–':pct(r.ytd)}</td>
+      <td style="color:var(--dim)">${r.fromHigh===null?'–':r.fromHigh.toFixed(1)}</td>
+      <td style="color:var(--dim)">${r.vol===null?'–':r.vol.toFixed(0)}</td>
+    </tr>`).join('');
+}
+</script>
+</body>
+</html>
