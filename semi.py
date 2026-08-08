@@ -165,6 +165,55 @@ def fetch(args):
     }
 
 
+# 영업이익률 추이를 볼 대상 — 메모리 5사
+MARGIN_TARGETS = [
+    ("005930.KS", "삼성전자"), ("000660.KS", "SK하이닉스"), ("MU", "마이크론"),
+    ("285A.T", "키오시아"), ("SNDK", "샌디스크"),
+]
+
+
+def margin_rows(stmt) -> list[dict]:
+    """손익계산서에서 영업이익률만 뽑는다. 열은 최신순이라 뒤집어 시간순으로 만든다."""
+    if stmt is None or stmt.empty:
+        return []
+    if "Total Revenue" not in stmt.index or "Operating Income" not in stmt.index:
+        return []
+    out = []
+    for col in reversed(list(stmt.columns)):
+        rev = stmt.loc["Total Revenue", col]
+        op = stmt.loc["Operating Income", col]
+        if pd.isna(rev) or pd.isna(op) or not rev:
+            continue
+        out.append({"period": col.strftime("%Y-%m"),
+                    "margin": round(float(op) / float(rev) * 100, 1)})
+    return out
+
+
+def margins() -> list[dict]:
+    """연간·분기 영업이익률.
+
+    한계를 화면에도 적어야 한다.
+      · 삼성전자·SK하이닉스는 전사 기준이라 메모리 사업부만의 수치가 아니다
+      · 회계연도 기준이 회사마다 달라(마이크론 8월, 샌디스크 6월) 같은 해도 시점이 다르다
+      · yfinance가 주는 과거 기간이 회사마다 3~5년으로 들쭉날쭉하다
+    """
+    out = []
+    for sym, name in MARGIN_TARGETS:
+        tk = yf.Ticker(sym)
+        try:
+            ann = margin_rows(tk.income_stmt)
+            qtr = margin_rows(tk.quarterly_income_stmt)
+        except Exception as exc:
+            print(f"[margin] {sym} 실패: {exc}")
+            continue
+        if not ann and not qtr:
+            print(f"[margin] {sym} 손익 데이터 없음 — 제외")
+            continue
+        out.append({"sym": sym, "name": name, "annual": ann, "quarterly": qtr})
+        print(f"[margin] {name} 연간 {len(ann)}기 · 분기 {len(qtr)}기")
+    return out
+
+
 def main() -> None:
     syms = [t[0] for tier in TIERS.values() for t in tier]
     # YTD를 계산해야 하므로 연초부터 확보한다. 6개월로는 1월이 안 들어온다.
@@ -216,7 +265,8 @@ def main() -> None:
         "tier_order": list(TIERS),
         "tiers": tiers,
         "items": rows,
-        "memory": {"cap_share": cap_share, **memshare.build()},
+        "memory": {"cap_share": cap_share, **memshare.build(),
+                   "margins": margins()},
     }
     # bench_ret의 키가 int라 JSON에서 문자열이 된다. 명시적으로 정리한다
     payload["bench"] = {
