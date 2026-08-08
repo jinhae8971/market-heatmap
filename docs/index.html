@@ -87,7 +87,10 @@
       <i style="background:var(--up1)"></i><i style="background:var(--up3)"></i>
       <span>+3%</span>
     </div>
-    <button class="grp on" id="grp">섹터 묶기</button>
+    <div style="display:flex;gap:6px">
+      <button class="grp" id="soft">비중 완화</button>
+      <button class="grp on" id="grp">섹터 묶기</button>
+    </div>
   </div>
   <div id="map"><div id="msg">불러오는 중…</div></div>
 </div>
@@ -112,13 +115,14 @@ const fmtCap=v=>v>=1e12?(v/1e12).toFixed(2)+'T':v>=1e9?(v/1e9).toFixed(1)+'B':(v
 const fmtPct=v=>(v>=0?'+':'')+v.toFixed(2)+'%';
 const fmtNum=v=>v>=1000?v.toLocaleString('en-US',{maximumFractionDigits:0}):v.toFixed(2);
 
-let DATA=null, view='ALL', grouped=true;
+let DATA=null, view='ALL', grouped=true, soften=false;
 
 fetch('heatmap.json?t='+Date.now()).then(r=>r.json()).then(d=>{
   DATA=d;
   const kst=new Date(d.generated_at).toLocaleString('ko-KR',
     {timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
   document.getElementById('stamp').textContent=kst+' KST';
+  stampArea();
   const tabs=document.getElementById('tabs');
   const list=[['ALL','전체'],...Object.entries(d.markets).map(([k,v])=>[k,v.label])];
   list.forEach(([k,label])=>{
@@ -139,8 +143,17 @@ fetch('heatmap.json?t='+Date.now()).then(r=>r.json()).then(d=>{
 
 document.getElementById('grp').onclick=e=>{
   grouped=!grouped; e.target.classList.toggle('on',grouped); draw();};
+document.getElementById('soft').onclick=e=>{
+  soften=!soften; e.target.classList.toggle('on',soften); draw(); stampArea();};
 document.getElementById('s-close').onclick=()=>
   document.getElementById('sheet').classList.remove('on');
+
+function stampArea(){
+  const el=document.getElementById('stamp');
+  const base=el.dataset.base||(el.dataset.base=el.textContent);
+  // 완화를 켜면 면적이 더 이상 시총 비례가 아니다. 화면에 명시한다.
+  el.textContent=soften?base+' · 면적 완화':base;
+}
 
 function rows(){
   if(view==='ALL') return Object.entries(DATA.markets)
@@ -162,7 +175,8 @@ function draw(){
     grouped
       ? {children:d3.groups(data,key).map(([k,v])=>({name:k,children:v}))}
       : {children:data}
-  ).sum(d=>d.cap_usd).sort((a,b)=>b.value-a.value);
+  ).sum(d=>soften?Math.pow(d.cap_usd,0.6):d.cap_usd)
+   .sort((a,b)=>b.value-a.value);
 
   const pad=grouped?{top:13,inner:1.5}:{top:0,inner:1.5};
   d3.treemap().size([W,H]).paddingTop(pad.top)
