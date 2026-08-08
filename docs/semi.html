@@ -152,6 +152,13 @@
        preserveAspectRatio="none"></svg></div>
   <p class="hint" id="shhint"></p>
 
+  <h2>영업이익률 추이</h2>
+  <div class="segs" id="mgmode"></div>
+  <div class="trendbox"><svg id="mg" viewBox="0 0 340 210"
+       preserveAspectRatio="none" style="height:210px"></svg></div>
+  <div class="lg" id="mglg" style="margin-top:10px"></div>
+  <p class="hint" id="mghint"></p>
+
   <h2>상대 평가</h2>
   <p class="hint">두 지표를 축으로 놓고 보면 "싸서 안 오른 것"과 "비싸도 오른 것"이
      갈린다. 점선은 각 축의 중앙값이고, 점 크기는 시가총액이다.</p>
@@ -218,6 +225,9 @@ fetch('semi.json?t='+Date.now()).then(r=>r.json()).then(d=>{
   seg('shmode',[['cap','시총 점유율'],['rev','DRAM 매출 점유율']],shMode,
       v=>{shMode=v;shareView();});
   shareView();
+  seg('mgmode',[['annual','연간'],['quarterly','분기']],mgMode,
+      v=>{mgMode=v;margins();});
+  margins();
   initScatter(); scatter(); table();
   document.getElementById('foot').innerHTML=
     `상대강도 = 20일 수익률 − SOX 20일 수익률 · 계층 집계는 시총가중<br>`+
@@ -344,6 +354,77 @@ function shareTrend(){
            text-anchor="${i===0?'start':i===n-1?'end':'middle'}">${r.q}</text>`;
   });
   svg.innerHTML=g;
+}
+
+/* 영업이익률 추이.
+   메모리는 사이클 산업이라 이익률의 진폭 자체가 정보다. 0%선을 항상 그려
+   적자 구간이 눈에 들어오게 한다. 회사마다 회계연도와 보유 기간이 달라
+   x축을 공유하지 않고 각자의 기간을 그대로 그린다 — 억지로 맞추면 왜곡된다. */
+let mgMode='annual';
+
+function margins(){
+  const list=(D.memory&&D.memory.margins)||[];
+  const svg=document.getElementById('mg');
+  const series=list.map(m=>({name:m.name, rows:m[mgMode]||[]}))
+                   .filter(m=>m.rows.length>1);
+  if(!series.length){
+    svg.innerHTML=`<text x="170" y="105" fill="#8b97a4" text-anchor="middle"
+      font-size="11">데이터가 부족합니다</text>`;
+    document.getElementById('mglg').innerHTML=''; return;
+  }
+  const W=340,H=210,P={l:28,r:10,t:12,b:26};
+  const all=series.flatMap(s=>s.rows.map(r=>r.margin));
+  const lo=Math.min(0,...all), hi=Math.max(...all);
+  const pad=(hi-lo)*0.08||2;
+  const maxLen=Math.max(...series.map(s=>s.rows.length));
+  const X=(i,n)=>P.l+(n<2?0.5:i/(n-1))*(W-P.l-P.r);
+  const Y=v=>H-P.b-(v-lo+pad)/((hi-lo)+pad*2)*(H-P.t-P.b);
+
+  let g='';
+  // 0%선 — 적자 전환이 어디였는지가 이 차트의 핵심
+  g+=`<line x1="${P.l}" y1="${Y(0)}" x2="${W-P.r}" y2="${Y(0)}"
+       stroke="#3a444f" stroke-dasharray="3 3"/>`;
+  g+=`<text x="${P.l-4}" y="${Y(0)+3}" fill="#8b97a4" font-size="8"
+       text-anchor="end">0</text>`;
+  [lo<0?lo:null,hi].filter(v=>v!==null).forEach(v=>{
+    g+=`<text x="${P.l-4}" y="${Y(v)+3}" fill="#8b97a4" font-size="8"
+         text-anchor="end">${v.toFixed(0)}</text>`;});
+
+  series.forEach(s=>{
+    const n=s.rows.length;
+    let d='';
+    s.rows.forEach((r,i)=>{ d+=(i?'L':'M')+X(i,n).toFixed(1)+' '+Y(r.margin).toFixed(1)+' '; });
+    g+=`<path d="${d}" fill="none" stroke="${SHCOL[s.name]||'#6b7784'}"
+         stroke-width="1.7" stroke-linejoin="round"/>`;
+    s.rows.forEach((r,i)=>{
+      g+=`<circle cx="${X(i,n)}" cy="${Y(r.margin)}" r="2.2"
+           fill="${SHCOL[s.name]||'#6b7784'}"/>`;});
+    const last=s.rows[n-1];
+    g+=`<text x="${X(n-1,n)-3}" y="${Y(last.margin)-6}" text-anchor="end"
+         fill="${SHCOL[s.name]||'#6b7784'}" font-size="8.5">${last.margin.toFixed(0)}%</text>`;
+  });
+
+  // x축 라벨은 가장 긴 계열의 기간을 쓴다
+  const longest=series.reduce((a,b)=>b.rows.length>a.rows.length?b:a);
+  longest.rows.forEach((r,i)=>{
+    const n=longest.rows.length;
+    if(i===0||i===n-1||n<=5)
+      g+=`<text x="${X(i,n)}" y="${H-9}" fill="#8b97a4" font-size="7.5"
+           text-anchor="${i===0?'start':i===n-1?'end':'middle'}">${r.period}</text>`;
+  });
+  svg.innerHTML=g;
+
+  document.getElementById('mglg').innerHTML=series.map(s=>{
+    const r=s.rows[s.rows.length-1];
+    return `<div><i style="background:${SHCOL[s.name]||'#6b7784'}"></i>${s.name}
+      <b style="color:${r.margin<0?'var(--dn)':'var(--txt)'}">${r.margin.toFixed(1)}%
+      <span style="color:var(--dim);font-size:10px"> ${r.period}</span></b></div>`;
+  }).join('');
+
+  document.getElementById('mghint').textContent=
+    '삼성전자·SK하이닉스는 전사 기준이라 메모리 사업부만의 수치가 아니다. '+
+    '회계연도가 회사마다 달라(마이크론 8월, 샌디스크 6월) 같은 연도라도 시점이 다르고, '+
+    '보유 기간도 3~4기로 회사마다 다르다.';
 }
 
 /* 상대 평가 산점도.
