@@ -180,18 +180,37 @@ function draw(){
   g.append('rect').attr('width',d=>d.x1-d.x0).attr('height',d=>d.y1-d.y0)
     .attr('fill',d=>color(d.data.chg));
 
+  // 라벨은 '넣을 수 있으면 넣는다'가 아니라 '들어가는 것만 넣는다'.
+  // 폰트 크기를 글자 수로 추정하면 한글이 라틴보다 넓어 타일 밖으로 넘치고,
+  // 작은 타일에서 이름끼리 겹쳐 읽을 수 없게 된다. 실제 렌더 폭을 재서
+  // 한글명 → 티커 → 생략 순으로 물러난다.
+  const short=d=>(d.sym||'').replace(/-USD$/,'').split('.')[0];
   g.each(function(d){
     const w=d.x1-d.x0, h=d.y1-d.y0;
-    if(w<26||h<18) return;
-    const fs=Math.max(8,Math.min(w/(d.data.name.length*0.82),h*0.36,17));
+    if(w<24||h<16) return;
     const n=d3.select(this);
-    n.append('text').attr('x',w/2).attr('y',h/2-(h>34?fs*0.15:0))
-      .attr('text-anchor','middle').attr('dominant-baseline','middle')
-      .style('font-size',fs+'px').text(d.data.name);
-    if(h>34&&w>40) n.append('text').attr('class','pct')
-      .attr('x',w/2).attr('y',h/2+fs*0.95).attr('text-anchor','middle')
-      .attr('dominant-baseline','middle').style('font-size',(fs*0.78)+'px')
-      .text(fmtPct(d.data.chg));
+    const pad=5;
+
+    for(const text of [d.data.name, short(d.data)]){
+      if(!text) continue;
+      const fs=Math.min(h*0.34, 17, w/(text.length*0.62));
+      if(fs<7.5) continue;
+      const showPct = h>34 && w>44;
+      const t=n.append('text')
+        .attr('x',w/2).attr('y',h/2-(showPct?fs*0.55:0))
+        .attr('text-anchor','middle').attr('dominant-baseline','middle')
+        .style('font-size',fs+'px').text(text);
+      if(t.node().getComputedTextLength() > w-pad){ t.remove(); continue; }
+
+      if(showPct){
+        const p=n.append('text').attr('class','pct')
+          .attr('x',w/2).attr('y',h/2+fs*0.70).attr('text-anchor','middle')
+          .attr('dominant-baseline','middle').style('font-size',(fs*0.78)+'px')
+          .text(fmtPct(d.data.chg));
+        if(p.node().getComputedTextLength() > w-pad) p.remove();
+      }
+      return;
+    }
   });
 }
 
@@ -202,7 +221,8 @@ function open(d){
     <div class="row"><i>등락률</i><b style="color:${color(d.chg)}">${fmtPct(d.chg)}</b></div>
     <div class="row"><i>현재가</i><b>${fmtNum(d.price)} ${d.ccy}</b></div>
     <div class="row"><i>시가총액</i><b>$${fmtCap(d.cap_usd)}</b></div>
-    <div class="row"><i>현지 시총</i><b>${fmtCap(d.cap_local)} ${d.ccy}</b></div>`;
+    ${d.ccy==='USD'?'':
+      `<div class="row"><i>현지 시총</i><b>${fmtCap(d.cap_local)} ${d.ccy}</b></div>`}`;
   document.getElementById('sheet').classList.add('on');
 }
 </script>

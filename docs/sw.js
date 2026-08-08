@@ -1,7 +1,7 @@
 /* 앱 셸은 캐시 우선, 시세 데이터는 네트워크 우선.
    히트맵은 오래된 숫자를 보여주는 게 안 보여주는 것보다 나쁘다.
    그래서 heatmap.json은 항상 네트워크를 먼저 치고, 실패했을 때만 캐시로 떨어진다. */
-const SHELL = 'heatmap-shell-v1';
+const SHELL = 'heatmap-shell-v2';
 const DATA  = 'heatmap-data-v1';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest',
