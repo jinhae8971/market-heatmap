@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>마켓 히트맵</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#14181d; --line:#232a32;
+    --txt:#e8edf2; --dim:#8b97a4;
+    --up3:#e2394a; --up1:#7a2733; --flat:#2b3138; --dn1:#1d4a6b; --dn3:#2e8fd6;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+    font-family:'IBM Plex Sans KR',system-ui,sans-serif;overscroll-behavior:none}
+  #app{display:flex;flex-direction:column;height:100dvh}
+
+  header{padding:10px 14px 0;flex:none}
+  .ttl{display:flex;align-items:baseline;gap:9px}
+  .ttl h1{font-size:17px;font-weight:700;margin:0;letter-spacing:-.02em}
+  .ttl span{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--dim)}
+
+  .tabs{display:flex;gap:6px;overflow-x:auto;padding:10px 0 9px;
+    scrollbar-width:none} .tabs::-webkit-scrollbar{display:none}
+  .tab{flex:none;padding:6px 13px;border-radius:999px;border:1px solid var(--line);
+    background:var(--panel);color:var(--dim);font-size:13px;font-weight:500;cursor:pointer}
+  .tab.on{background:var(--txt);color:var(--bg);border-color:var(--txt);font-weight:600}
+
+  .bar{display:flex;align-items:center;justify-content:space-between;
+    padding:0 14px 8px;flex:none;font-size:11px;color:var(--dim)}
+  .scale{display:flex;align-items:center;gap:5px;font-family:'IBM Plex Mono',monospace}
+  .scale i{width:15px;height:9px;display:block;border-radius:1px}
+  .grp{background:none;border:1px solid var(--line);color:var(--dim);
+    border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer}
+  .grp.on{color:var(--txt);border-color:var(--dim)}
+
+  #map{flex:1;min-height:0;padding:0 8px 8px}
+  svg{width:100%;height:100%;display:block}
+  .cell rect{stroke:var(--bg);stroke-width:1.2}
+  .cell text{pointer-events:none;font-weight:600;fill:#fff;
+    paint-order:stroke;stroke:rgba(0,0,0,.35);stroke-width:2px}
+  .cell .pct{font-family:'IBM Plex Mono',monospace;font-weight:500}
+  .sec-label{fill:var(--dim);font-size:9.5px;font-weight:600;letter-spacing:.04em}
+
+  /* 상세 시트 */
+  #sheet{position:fixed;left:0;right:0;bottom:0;background:var(--panel);
+    border-top:1px solid var(--line);padding:16px 18px calc(20px + env(safe-area-inset-bottom));
+    transform:translateY(102%);transition:transform .25s cubic-bezier(.2,.8,.2,1);z-index:9}
+  #sheet.on{transform:translateY(0)}
+  #sheet .grab{width:34px;height:3px;background:var(--line);border-radius:2px;
+    margin:-6px auto 13px}
+  #sheet h2{margin:0 0 2px;font-size:19px;letter-spacing:-.02em}
+  #sheet .sub{color:var(--dim);font-size:11.5px;font-family:'IBM Plex Mono',monospace;
+    margin-bottom:14px}
+  .row{display:flex;justify-content:space-between;padding:7px 0;
+    border-bottom:1px solid var(--line);font-size:13.5px}
+  .row:last-of-type{border-bottom:0}
+  .row i{font-style:normal;color:var(--dim)}
+  .row b{font-family:'IBM Plex Mono',monospace;font-weight:600}
+  #sheet button{margin-top:14px;width:100%;padding:11px;background:none;
+    border:1px solid var(--line);border-radius:9px;color:var(--dim);font-size:13px;cursor:pointer}
+  #msg{padding:40px 20px;text-align:center;color:var(--dim);font-size:13px}
+  @media(prefers-reduced-motion:reduce){#sheet{transition:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="ttl"><h1>마켓 히트맵</h1><span id="stamp">로딩</span></div>
+    <div class="tabs" id="tabs"></div>
+  </header>
+  <div class="bar">
+    <div class="scale">
+      <span>-3%</span>
+      <i style="background:var(--dn3)"></i><i style="background:var(--dn1)"></i>
+      <i style="background:var(--flat)"></i>
+      <i style="background:var(--up1)"></i><i style="background:var(--up3)"></i>
+      <span>+3%</span>
+    </div>
+    <button class="grp on" id="grp">섹터 묶기</button>
+  </div>
+  <div id="map"><div id="msg">불러오는 중…</div></div>
+</div>
+
+<div id="sheet">
+  <div class="grab"></div>
+  <h2 id="s-name">–</h2>
+  <div class="sub" id="s-sym">–</div>
+  <div id="s-rows"></div>
+  <button id="s-close">닫기</button>
+</div>
+
+<script>
+const CS=['--dn3','--dn1','--flat','--up1','--up3'].map(v=>
+  getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+const color=d3.scaleLinear().domain([-3,-1,0,1,3]).range(CS).clamp(true);
+const fmtCap=v=>v>=1e12?(v/1e12).toFixed(2)+'T':v>=1e9?(v/1e9).toFixed(1)+'B':(v/1e6).toFixed(0)+'M';
+const fmtPct=v=>(v>=0?'+':'')+v.toFixed(2)+'%';
+const fmtNum=v=>v>=1000?v.toLocaleString('en-US',{maximumFractionDigits:0}):v.toFixed(2);
+
+let DATA=null, view='ALL', grouped=true;
+
+fetch('heatmap.json?t='+Date.now()).then(r=>r.json()).then(d=>{
+  DATA=d;
+  const kst=new Date(d.generated_at).toLocaleString('ko-KR',
+    {timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  document.getElementById('stamp').textContent=kst+' KST';
+  const tabs=document.getElementById('tabs');
+  const list=[['ALL','전체'],...Object.entries(d.markets).map(([k,v])=>[k,v.label])];
+  list.forEach(([k,label])=>{
+    const b=document.createElement('button');
+    b.className='tab'+(k===view?' on':''); b.textContent=label;
+    b.onclick=()=>{view=k;[...tabs.children].forEach(c=>c.classList.remove('on'));
+      b.classList.add('on');draw();};
+    tabs.appendChild(b);
+  });
+  draw();
+  window.addEventListener('resize',()=>{clearTimeout(window._t);
+    window._t=setTimeout(draw,180);});
+}).catch(()=>{document.getElementById('msg').textContent=
+  'heatmap.json을 불러오지 못했습니다. 수집 워크플로우 실행 후 다시 열어 주세요.';});
+
+document.getElementById('grp').onclick=e=>{
+  grouped=!grouped; e.target.classList.toggle('on',grouped); draw();};
+document.getElementById('s-close').onclick=()=>
+  document.getElementById('sheet').classList.remove('on');
+
+function rows(){
+  if(view==='ALL') return Object.entries(DATA.markets)
+    .flatMap(([m,v])=>v.items.map(x=>({...x,mkt:v.label})));
+  const v=DATA.markets[view];
+  return v.items.map(x=>({...x,mkt:v.label}));
+}
+
+function draw(){
+  const el=document.getElementById('map'); el.innerHTML='';
+  const W=el.clientWidth, H=el.clientHeight;
+  if(!W||!H) return;
+  const data=rows().filter(r=>r.cap_usd>0);
+  if(!data.length){el.innerHTML='<div id="msg">표시할 종목이 없습니다.</div>';return;}
+
+  // 그룹 키: 전체 보기에서는 시장, 개별 시장에서는 섹터
+  const key=r=>view==='ALL'?r.mkt:r.sector;
+  const root=d3.hierarchy(
+    grouped
+      ? {children:d3.groups(data,key).map(([k,v])=>({name:k,children:v}))}
+      : {children:data}
+  ).sum(d=>d.cap_usd).sort((a,b)=>b.value-a.value);
+
+  const pad=grouped?{top:13,inner:1.5}:{top:0,inner:1.5};
+  d3.treemap().size([W,H]).paddingTop(pad.top)
+    .paddingInner(pad.inner).round(true)(root);
+
+  const svg=d3.select(el).append('svg').attr('viewBox',`0 0 ${W} ${H}`);
+
+  if(grouped){
+    svg.selectAll('.sec-label').data(root.children||[]).join('text')
+      .attr('class','sec-label').attr('x',d=>d.x0+2).attr('y',d=>d.y0+10)
+      .text(d=>(d.x1-d.x0)>52?d.data.name:'');
+  }
+
+  const g=svg.selectAll('.cell').data(root.leaves()).join('g')
+    .attr('class','cell').attr('transform',d=>`translate(${d.x0},${d.y0})`)
+    .style('cursor','pointer').on('click',(e,d)=>open(d.data));
+
+  g.append('rect').attr('width',d=>d.x1-d.x0).attr('height',d=>d.y1-d.y0)
+    .attr('fill',d=>color(d.data.chg));
+
+  g.each(function(d){
+    const w=d.x1-d.x0, h=d.y1-d.y0;
+    if(w<26||h<18) return;
+    const fs=Math.max(8,Math.min(w/(d.data.name.length*0.82),h*0.36,17));
+    const n=d3.select(this);
+    n.append('text').attr('x',w/2).attr('y',h/2-(h>34?fs*0.15:0))
+      .attr('text-anchor','middle').attr('dominant-baseline','middle')
+      .style('font-size',fs+'px').text(d.data.name);
+    if(h>34&&w>40) n.append('text').attr('class','pct')
+      .attr('x',w/2).attr('y',h/2+fs*0.95).attr('text-anchor','middle')
+      .attr('dominant-baseline','middle').style('font-size',(fs*0.78)+'px')
+      .text(fmtPct(d.data.chg));
+  });
+}
+
+function open(d){
+  document.getElementById('s-name').textContent=d.name;
+  document.getElementById('s-sym').textContent=`${d.sym} · ${d.mkt} · ${d.sector}`;
+  document.getElementById('s-rows').innerHTML=`
+    <div class="row"><i>등락률</i><b style="color:${color(d.chg)}">${fmtPct(d.chg)}</b></div>
+    <div class="row"><i>현재가</i><b>${fmtNum(d.price)} ${d.ccy}</b></div>
+    <div class="row"><i>시가총액</i><b>$${fmtCap(d.cap_usd)}</b></div>
+    <div class="row"><i>현지 시총</i><b>${fmtCap(d.cap_local)} ${d.ccy}</b></div>`;
+  document.getElementById('sheet').classList.add('on');
+}
+</script>
+</body>
+</html>
