@@ -103,7 +103,7 @@
 </div>
 
 <script>
-const APP_VERSION="1.8.0";
+const APP_VERSION="1.8.1";
 if('serviceWorker' in navigator)
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 
@@ -177,7 +177,8 @@ function comps(){
       ${c.flag}</div>`:''}`;
   }).join('');
   const hasInv=m.components.some(c=>c.invert);
-  const invNote=hasInv?'"역" 표시 항목은 값이 클수록 공포이며, 종합 점수에는 뒤집어 반영된다. ':'';
+  const invNote=(hasInv?'"역" 표시 항목은 값이 클수록 공포이며, 종합 점수에는 뒤집어 반영된다. ':'')
+    +'종합 점수는 구성요소 평균의 5일 이동평균이라 아래 값들의 단순 평균과 다를 수 있다. ';
   document.getElementById('chint').textContent= invNote + (
     mkt==='한국'
       ? (D.kr_note||'')+' 레버리지/인버스 거래대금 비율은 개인이 어느 방향에 실제로 베팅했는지를 보여준다.'

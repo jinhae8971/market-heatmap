@@ -31,7 +31,7 @@ import yfinance as yf
 OUT = "docs/sentiment.json"
 # 5년 추이를 그리려면 그보다 1년 더 받아야 한다.
 # 롤링 250일 백분위는 첫 1년치를 소모하기 때문이다.
-LOOKBACK = "6y"
+LOOKBACK = "8y"   # 롤링 2년 백분위가 첫 2년을 소모하므로 5년 추이엔 8년이 필요하다
 HIST_DAYS = 1260         # 약 5년(거래일)
 BENCH_IDX = {"미국": "^IXIC", "한국": "^KS11"}
 
@@ -76,6 +76,22 @@ def pct_rank(series: pd.Series) -> float | None:
     return round(float((s < s.iloc[-1]).mean()) * 100, 1)
 
 
+SMOOTH = 5   # 거래일. 하루짜리 갭을 지우되 국면 정보는 남기는 최소 구간
+
+
+SMOOTH_FLOW = 20   # 거래대금처럼 하루 편차가 큰 계열용
+
+
+def smooth(s: pd.Series, window: int = SMOOTH) -> pd.Series:
+    """비율 지표를 5일 평균으로 다듬는다.
+
+    코스피가 하루 ±18% 움직이는 국면에서는 비율이 하루 만에 백분위 0↔100을
+    오간다. 그러면 종합지수가 수직으로 튀어 추세를 전혀 읽을 수 없다.
+    심리는 하루 만에 뒤집히는 게 아니므로 짧은 평균으로 갭을 흡수한다.
+    """
+    return s.rolling(window, min_periods=1).mean()
+
+
 def ratio_series(px: pd.DataFrame, num: str, den: str) -> pd.Series | None:
     try:
         a, b = px[num].dropna(), px[den].dropna()
@@ -84,7 +100,7 @@ def ratio_series(px: pd.DataFrame, num: str, den: str) -> pd.Series | None:
     idx = a.index.intersection(b.index)
     if len(idx) < 60:
         return None
-    return (a.reindex(idx) / b.reindex(idx)).dropna()
+    return smooth((a.reindex(idx) / b.reindex(idx)).dropna())
 
 
 def breadth(px: pd.DataFrame, symbols: list[str]) -> tuple[float | None, float | None]:
@@ -119,7 +135,9 @@ def lev_ratio(px: pd.DataFrame, vol: pd.DataFrame,
     if len(idx) < 60:
         return None
     tot = a.reindex(idx) + b.reindex(idx)
-    return (a.reindex(idx) / tot.replace(0, np.nan)).dropna()
+    # 거래대금은 하루 편차가 비율 지표의 4배다. 5일로는 부족해 20일로 다듬는다.
+    # 진단 결과 이 항목 하나가 한국 종합지수의 수직 스파이크를 만들고 있었다.
+    return smooth((a.reindex(idx) / tot.replace(0, np.nan)).dropna(), SMOOTH_FLOW)
 
 
 def realized_vol(px: pd.DataFrame, sym: str, window: int = 20) -> pd.Series | None:
@@ -130,7 +148,7 @@ def realized_vol(px: pd.DataFrame, sym: str, window: int = 20) -> pd.Series | No
         return None
     if len(s) < window + 40:
         return None
-    return (s.pct_change().rolling(window).std() * np.sqrt(252) * 100).dropna()
+    return smooth((s.pct_change().rolling(window).std() * np.sqrt(252) * 100).dropna())
 
 
 def build_market(name: str, px: pd.DataFrame, ratios, breadth_syms,
@@ -153,7 +171,7 @@ def build_market(name: str, px: pd.DataFrame, ratios, breadth_syms,
 
     if vol_sym:
         try:
-            v = px[vol_sym].dropna()
+            v = smooth(px[vol_sym].dropna())
             r = pct_rank(v)
             if r is not None:
                 # 변동성은 이름 그대로 '변동성'으로 보여준다.
@@ -168,7 +186,7 @@ def build_market(name: str, px: pd.DataFrame, ratios, breadth_syms,
 
     if fx_sym:
         try:
-            f = px[fx_sym].dropna()
+            f = smooth(px[fx_sym].dropna())
             r = pct_rank(f)
             if r is not None:
                 # USD/KRW가 높을수록 원화 약세 = 위험회피
@@ -212,15 +230,38 @@ def build_market(name: str, px: pd.DataFrame, ratios, breadth_syms,
         comps.append({"label": "20일선 위 종목", "score": ma,
                       "note": "상승의 폭이 넓은가", "value": ma, "d20": None})
     if adv is not None:
-        comps.append({"label": "오늘 상승 종목", "score": adv,
-                      "note": "당일 참여 폭", "value": adv, "d20": None})
+        # 당일 상승 비율은 하루 노이즈라 종합에서 뺀다.
+        # 넣으면 추이(과거 시계열)와 구성요소가 달라져 두 화면이 어긋난다.
+        comps.append({"label": "오늘 상승 종목", "score": adv, "in_score": False,
+                      "note": "당일 참여 폭 · 종합에는 미반영", "value": adv, "d20": None})
 
-    total = round(sum(c["score"] for c in comps) / len(comps), 1) if comps else None
+    scored = [c for c in comps if c.get("in_score", True)]
+    total = round(sum(c["score"] for c in scored) / len(scored), 1) if scored else None
     return {"name": name, "score": total, "components": comps}
 
 
+def roll_pct(s: pd.Series) -> pd.Series:
+    """롤링 백분위. 창 길이를 현재 점수(PCT_WINDOW)와 맞춰야
+    추이의 마지막 값과 화면 상단의 종합 점수가 일치한다."""
+    return s.rolling(PCT_WINDOW, min_periods=120).apply(
+        lambda w: (w < w.iloc[-1]).mean() * 100, raw=False)
+
+
+def breadth_series(px: pd.DataFrame, symbols: list[str]) -> pd.Series | None:
+    """20일선 위 종목 비율의 시계열. 현재 점수에만 있고 추이에 없으면
+    두 화면이 서로 다른 지표가 된다."""
+    cols = [c for c in symbols if c in px.columns]
+    if len(cols) < 5:
+        return None
+    sub = px[cols]
+    above = (sub > sub.rolling(20, min_periods=20).mean()).sum(axis=1)
+    valid = sub.rolling(20, min_periods=20).mean().notna().sum(axis=1)
+    return smooth((above / valid.replace(0, np.nan) * 100).dropna())
+
+
 def history(px: pd.DataFrame, ratios, vol_sym: str | None,
-            idx_sym: str | None = None) -> list[dict]:
+            idx_sym: str | None = None, extra: list[pd.Series] | None = None,
+            breadth_syms: list[str] | None = None) -> list[dict]:
     """종합지수 추이 + 같은 날짜의 지수 종가.
 
     지수를 함께 실어야 '센티멘트가 지수를 이끄는가, 따라가는가'를 볼 수 있다.
@@ -228,21 +269,27 @@ def history(px: pd.DataFrame, ratios, vol_sym: str | None,
     parts = []
     for _, num, den, _ in ratios:
         ser = ratio_series(px, num, den)
-        if ser is None:
-            continue
-        parts.append(ser.rolling(250, min_periods=60)
-                     .apply(lambda w: (w < w.iloc[-1]).mean() * 100, raw=False))
+        if ser is not None:
+            parts.append(roll_pct(ser))
     if vol_sym:
         try:
-            v = px[vol_sym].dropna()
-            parts.append(100 - v.rolling(250, min_periods=60)
-                         .apply(lambda w: (w < w.iloc[-1]).mean() * 100, raw=False))
+            parts.append(100 - roll_pct(smooth(px[vol_sym].dropna())))
         except KeyError:
             pass
+    for ser in (extra or []):
+        if ser is not None:
+            parts.append(ser)
+    if breadth_syms:
+        b = breadth_series(px, breadth_syms)
+        if b is not None:
+            parts.append(b)
     if not parts:
         return []
     df = pd.concat(parts, axis=1).dropna(how="all")
-    avg = df.mean(axis=1).dropna().tail(HIST_DAYS)
+    # 종합에 5일 평균을 한 번 더 건다. 구성요소를 다듬어도 8개 백분위의 평균은
+    # 여전히 튄다 — 한 지표가 임계를 넘나들면 백분위가 계단식으로 움직이기 때문이다.
+    # 화면 상단의 현재 점수도 이 계열의 마지막 값을 쓴다(아래 main 참고).
+    avg = df.mean(axis=1).rolling(SMOOTH, min_periods=1).mean().dropna().tail(HIST_DAYS)
 
     idx = None
     if idx_sym:
@@ -315,8 +362,30 @@ def main() -> None:
     us = build_market("미국", px, RATIOS_US, us_syms, VOL_US, None)
     kr = build_market("한국", px, RATIOS_KR, kr_syms, None, FX_KR, vol_df)
 
-    hist = {"미국": history(px, RATIOS_US, VOL_US, BENCH_IDX["미국"]),
-            "한국": history(px, RATIOS_KR, None, BENCH_IDX["한국"])}
+    # 추이는 현재 점수와 같은 구성요소로 만든다.
+    # 예전에는 추이가 비율 4개만 써서, 하나가 극단으로 가면 종합이 수직으로 튀었다.
+    kr_extra = []
+    lev = lev_ratio(px, vol_df, *LEV_KR)
+    if lev is not None:
+        kr_extra.append(roll_pct(lev))
+    rv = realized_vol(px, RV_KR)
+    if rv is not None:
+        kr_extra.append(100 - roll_pct(rv))
+    try:
+        kr_extra.append(100 - roll_pct(smooth(px[FX_KR].dropna())))
+    except KeyError:
+        pass
+
+    hist = {"미국": history(px, RATIOS_US, VOL_US, BENCH_IDX["미국"],
+                          breadth_syms=us_syms),
+            "한국": history(px, RATIOS_KR, None, BENCH_IDX["한국"],
+                          extra=kr_extra, breadth_syms=kr_syms)}
+
+    # 현재 점수 = 추이의 마지막 값. 두 곳에서 따로 계산하면 반드시 어긋난다.
+    for m in (us, kr):
+        h = hist.get(m["name"]) or []
+        if h:
+            m["score"] = h[-1]["v"]
 
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
