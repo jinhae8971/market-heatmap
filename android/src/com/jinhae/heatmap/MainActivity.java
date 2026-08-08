@@ -90,9 +90,37 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(offline, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        applyInsets(root);
         setContentView(root);
 
         load();
+    }
+
+    /**
+     * targetSdk 35(Android 15)부터는 엣지투엣지가 강제된다.
+     * 이 처리를 빼면 히트맵 상단 탭이 상태바 아래로 파고들어 가려진다.
+     */
+    private void applyInsets(final View root) {
+        root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override
+            public android.view.WindowInsets onApplyWindowInsets(
+                    View v, android.view.WindowInsets insets) {
+                int top, bottom, left, right;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    android.graphics.Insets bars = insets.getInsets(
+                            android.view.WindowInsets.Type.systemBars());
+                    top = bars.top; bottom = bars.bottom;
+                    left = bars.left; right = bars.right;
+                } else {
+                    top = insets.getSystemWindowInsetTop();
+                    bottom = insets.getSystemWindowInsetBottom();
+                    left = insets.getSystemWindowInsetLeft();
+                    right = insets.getSystemWindowInsetRight();
+                }
+                v.setPadding(left, top, right, bottom);
+                return insets;
+            }
+        });
     }
 
     private LinearLayout buildOfflineView() {

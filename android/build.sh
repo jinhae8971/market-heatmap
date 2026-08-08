@@ -8,7 +8,7 @@ set -euo pipefail
 
 : "${ANDROID_HOME:?ANDROID_HOME을 Android SDK 경로로 설정하세요}"
 BT="${ANDROID_HOME}/build-tools/34.0.0"
-PLAT="${ANDROID_HOME}/platforms/android-34/android.jar"
+PLAT="${ANDROID_HOME}/platforms/android-35/android.jar"
 KS="${KEYSTORE:-build/heatmap.keystore}"
 KS_PASS="${KEYSTORE_PASS:-heatmap2026}"
 ALIAS="${KEY_ALIAS:-heatmap}"
@@ -22,7 +22,7 @@ echo "[1/5] 리소스 컴파일"
 
 echo "[2/5] 리소스 링크"
 "$BT/aapt2" link -o build/base.apk -I "$PLAT" --manifest AndroidManifest.xml \
-  --java build/gen --min-sdk-version 24 --target-sdk-version 34 build/resources.zip
+  --java build/gen --min-sdk-version 24 --target-sdk-version 35 build/resources.zip
 
 echo "[3/5] 자바 컴파일"
 # -encoding UTF-8 필수: 한글 문자열 리소스가 R.java 주석으로 들어간다
