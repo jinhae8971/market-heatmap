@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0d10">
-<title>반도체 · 마켓 히트맵</title>
+<title>산업 밸류체인 · 마켓 히트맵</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -126,11 +126,12 @@
 <div class="wrap">
   <div class="mode">
     <a href="index.html">히트맵</a>
-    <a href="semi.html" class="on">반도체</a>
+    <a href="semi.html" class="on">산업</a>
     <a href="trend.html">트렌드</a>
   </div>
 
-  <header><h1>반도체 밸류체인</h1><span class="stamp" id="stamp">로딩</span></header>
+  <header><h1 id="title">밸류체인</h1><span class="stamp" id="stamp">로딩</span></header>
+  <div class="segs" id="inds"></div>
 
   <div class="bench" id="bench"></div>
 
@@ -140,6 +141,10 @@
   <div class="segs" id="periods"></div>
   <div class="chain" id="chain"></div>
 
+  <h2>다가오는 실적</h2>
+  <div id="earn"></div>
+
+  <div id="memsec">
   <h2>메모리 점유율</h2>
   <div class="segs" id="shmode"></div>
   <div class="donut">
@@ -158,6 +163,8 @@
        preserveAspectRatio="none" style="height:210px"></svg></div>
   <div class="lg" id="mglg" style="margin-top:10px"></div>
   <p class="hint" id="mghint"></p>
+
+  </div>
 
   <h2>상대 평가</h2>
   <p class="hint">두 지표를 축으로 놓고 보면 "싸서 안 오른 것"과 "비싸도 오른 것"이
@@ -188,11 +195,12 @@
 </div>
 
 <script>
-const APP_VERSION="1.5.0";
+const APP_VERSION="1.6.0";
 if('serviceWorker' in navigator)
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 
-let D=null, period='d5', sortKey='d1', sortDir=-1, groupByTier=true;
+let ALL=null, D=null, ind='반도체';
+let period='d5', sortKey='d1', sortDir=-1, groupByTier=true;
 
 const num=v=>v===null||v===undefined?'–':(v>=0?'+':'')+v.toFixed(2);
 const col=v=>v===null||v===undefined?'var(--dim)':
@@ -200,19 +208,24 @@ const col=v=>v===null||v===undefined?'var(--dim)':
 const cap=v=>!v?'–':v>=1e12?'$'+(v/1e12).toFixed(2)+'T':'$'+(v/1e9).toFixed(0)+'B';
 
 fetch('semi.json?t='+Date.now()).then(r=>r.json()).then(d=>{
-  D=d;
+  ALL=d;
+  D=Object.assign({}, d, d.industries[ind]);
   const kst=new Date(d.generated_at).toLocaleString('ko-KR',
     {timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
   document.getElementById('stamp').textContent=kst+' KST';
 
-  const b=d.bench;
-  document.getElementById('bench').innerHTML=`
-    <div class="l">${b.name}<b>${b.level?b.level.toLocaleString():'–'}</b></div>
-    <div class="r">
-      ${[['d1','1일'],['d5','5일'],['d20','20일'],['ytd','YTD']].map(([k,l])=>
-        `<div style="color:${col(b[k])}">${num(b[k])}%<span>${l}</span></div>`).join('')}
-    </div>`;
+  renderBench();
+  const _unused=`
+`;
 
+  seg('inds', (d.industry_order||['반도체']).map(x=>[x,x]), ind, v=>{
+    ind=v;
+    D=Object.assign({}, ALL, ALL.industries[v]);
+    document.getElementById('title').textContent=v+' 밸류체인';
+    document.getElementById('memsec').style.display=(v==='반도체')?'':'none';
+    renderBench(); chain(); earnings(); scatter(); table();
+  });
+  document.getElementById('title').textContent=ind+' 밸류체인';
   seg('periods',[['d1','1일'],['d5','5일'],['d20','20일']],period,v=>{period=v;chain();});
   seg('sorts',[['d1','1일'],['d5','5일'],['d20','20일'],['ytd','YTD'],['rs20','상대강도'],
                ['from_high','고점대비'],['fpe','fwd PER'],['tier','계층순']],
@@ -222,7 +235,7 @@ fetch('semi.json?t='+Date.now()).then(r=>r.json()).then(d=>{
         table();});
   sortKey='tier'; groupByTier=true;
 
-  chain();
+  chain(); earnings();
   seg('shmode',[['cap','시총 점유율'],['rev','DRAM 매출 점유율']],shMode,
       v=>{shMode=v;shareView();});
   shareView();
@@ -235,6 +248,33 @@ fetch('semi.json?t='+Date.now()).then(r=>r.json()).then(d=>{
     `v${APP_VERSION} · 생성 ${d.generated_at} · 공개 데이터를 가공한 참고 자료이며 투자 권유가 아닙니다`;
 }).catch(()=>{document.getElementById('stamp').textContent=
   'semi.json을 불러오지 못했습니다. 수집 워크플로우 실행 후 다시 열어 주세요.';});
+
+function renderBench(){
+  const b=D.bench||{};
+  document.getElementById('bench').innerHTML=`
+    <div class="l">${b.name||'–'}<b>${b.level?b.level.toLocaleString():'–'}</b></div>
+    <div class="r">
+      ${[['d1','1일'],['d5','5일'],['d20','20일'],['ytd','YTD']].map(([k,l])=>
+        `<div style="color:${col(b[k])}">${num(b[k])}%<span>${l}</span></div>`).join('')}
+    </div>`;
+}
+
+/* 실적 발표일 — 지나간 것과 30일 밖은 뺀다. 오늘 판단에 쓰이지 않는다. */
+function earnings(){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const rows=(D.items||[]).filter(r=>r.earn).map(r=>({
+    ...r, days: Math.round((new Date(r.earn+'T00:00:00')-today)/86400000)
+  })).filter(r=>r.days>=0&&r.days<=30).sort((a,b)=>a.days-b.days);
+  const el=document.getElementById('earn');
+  if(!rows.length){ el.innerHTML='<p class="hint">30일 내 발표 예정이 없습니다.</p>'; return; }
+  el.innerHTML='<table><tbody>'+rows.map(r=>`
+    <tr data-s="${r.sym}"><td><span class="flag">${r.country}</span>${r.short}</td>
+      <td style="color:var(--dim)">${r.tier}</td>
+      <td>${r.earn.slice(5)}${r.earn_est?'*':''}</td>
+      <td style="color:${r.days<=7?'var(--up)':'var(--dim)'}">D-${r.days}</td></tr>`).join('')
+    +'</tbody></table><p class="hint">* 는 추정일. 확정 공시로 바뀔 수 있다.</p>';
+  el.querySelectorAll('tr[data-s]').forEach(t=>t.onclick=()=>open(t.dataset.s));
+}
 
 function seg(id,opts,cur,cb){
   const el=document.getElementById(id); el.innerHTML='';

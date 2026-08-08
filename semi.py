@@ -23,10 +23,11 @@ import yfinance as yf
 import memshare
 
 OUT = "docs/semi.json"
-BENCH = "^SOX"  # 필라델피아 반도체 지수 — 이 업종의 기준선
+# 산업별 기준선. 업종 전체가 오른 건지 이 종목이 센 건지는 기준선 없이 판별할 수 없다.
+BENCH = "^SOX"
 
 # (티커, 표시명, 축약명, 국가)
-TIERS: dict[str, list[tuple[str, str, str, str]]] = {
+SEMI_TIERS: dict[str, list[tuple[str, str, str, str]]] = {
     "장비": [
         ("ASML.AS", "ASML", "ASML", "EU"),
         ("AMAT", "어플라이드머티어리얼즈", "AMAT", "US"),
@@ -75,8 +76,77 @@ TIERS: dict[str, list[tuple[str, str, str, str]]] = {
     ],
 }
 
-FX_SYMBOLS = {"KRW": "KRW=X", "JPY": "JPY=X", "EUR": "EURUSD=X"}
+# 조선·방산·2차전지 — 반도체와 같은 구조라 계층 정의만 바꾸면 화면이 그대로 재사용된다
+SHIP_TIERS = {
+    "조선소": [
+        ("329180.KS", "HD현대중공업", "HD중공업", "KR"),
+        ("009540.KS", "HD한국조선해양", "HD조선해양", "KR"),
+        ("042660.KS", "한화오션", "한화오션", "KR"),
+        ("010140.KS", "삼성중공업", "삼성중", "KR"),
+        ("7012.T", "가와사키중공업", "가와사키", "JP"),
+    ],
+    "기자재·엔진": [
+        ("082740.KS", "HD현대인프라코어", "HD인프라", "KR"),
+        ("267250.KS", "HD현대", "HD현대", "KR"),
+        ("100090.KS", "삼강엠앤티", "삼강", "KR"),
+    ],
+    "해운": [
+        ("011200.KS", "HMM", "HMM", "KR"),
+        ("ZIM", "ZIM", "ZIM", "US"),
+        ("MATX", "Matson", "Matson", "US"),
+    ],
+}
+
+DEF_TIERS = {
+    "완성체": [
+        ("012450.KS", "한화에어로스페이스", "한화에어로", "KR"),
+        ("064350.KS", "현대로템", "로템", "KR"),
+        ("047810.KS", "한국항공우주", "KAI", "KR"),
+        ("LMT", "록히드마틴", "록히드", "US"),
+        ("RTX", "RTX", "RTX", "US"),
+        ("NOC", "노스롭그루먼", "노스롭", "US"),
+        ("AIR.PA", "에어버스", "에어버스", "EU"),
+        ("RHM.DE", "라인메탈", "라인메탈", "EU"),
+    ],
+    "부품·시스템": [
+        ("079550.KS", "LIG넥스원", "LIG넥스원", "KR"),
+        ("272210.KS", "한화시스템", "한화시스템", "KR"),
+        ("GD", "제너럴다이내믹스", "GD", "US"),
+        ("BA.L", "BAE시스템즈", "BAE", "EU"),
+    ],
+}
+
+BATT_TIERS = {
+    "셀": [
+        ("373220.KS", "LG에너지솔루션", "LG엔솔", "KR"),
+        ("006400.KS", "삼성SDI", "삼성SDI", "KR"),
+        ("096770.KS", "SK이노베이션", "SK이노", "KR"),
+        ("6752.T", "파나소닉", "파나소닉", "JP"),
+    ],
+    "소재": [
+        ("247540.KQ", "에코프로비엠", "에코프로BM", "KR"),
+        ("086520.KQ", "에코프로", "에코프로", "KR"),
+        ("051910.KS", "LG화학", "LG화학", "KR"),
+        ("005490.KS", "POSCO홀딩스", "포스코", "KR"),
+        ("003670.KS", "포스코퓨처엠", "포스코퓨처엠", "KR"),
+    ],
+    "수요": [
+        ("TSLA", "테슬라", "테슬라", "US"),
+        ("005380.KS", "현대차", "현대차", "KR"),
+        ("BYDDY", "BYD", "BYD", "US"),
+    ],
+}
+
+INDUSTRIES = {
+    "반도체": {"tiers": SEMI_TIERS, "bench": "^SOX", "bench_name": "필라델피아 반도체지수"},
+    "조선": {"tiers": SHIP_TIERS, "bench": "^KS11", "bench_name": "코스피"},
+    "방산": {"tiers": DEF_TIERS, "bench": "^KS11", "bench_name": "코스피"},
+    "2차전지": {"tiers": BATT_TIERS, "bench": "^KS11", "bench_name": "코스피"},
+}
+
+FX_SYMBOLS = {"KRW": "KRW=X", "JPY": "JPY=X", "EUR": "EURUSD=X", "GBP": "GBPUSD=X"}
 INVERTED = {"KRW", "JPY"}
+PENCE = {"GBp", "GBX"}
 
 
 def fx_table() -> dict[str, float]:
@@ -162,6 +232,10 @@ def fetch(args):
         "fpe": round(info.get("forwardPE"), 1) if info.get("forwardPE") else None,
         "pbr": round(info.get("priceToBook"), 2) if info.get("priceToBook") else None,
         "gm": round(info.get("grossMargins") * 100, 1) if info.get("grossMargins") else None,
+        # 실적 발표일 — 트레이더가 매일 확인하는 정보라 종목 행에 함께 싣는다
+        "earn": (dt.datetime.fromtimestamp(info["earningsTimestamp"], dt.timezone.utc)
+                 .strftime("%Y-%m-%d")) if info.get("earningsTimestamp") else None,
+        "earn_est": bool(info.get("isEarningsDateEstimate")),
     }
 
 
@@ -214,30 +288,30 @@ def margins() -> list[dict]:
     return out
 
 
-def main() -> None:
-    syms = [t[0] for tier in TIERS.values() for t in tier]
-    # YTD를 계산해야 하므로 연초부터 확보한다. 6개월로는 1월이 안 들어온다.
-    raw = yf.download([*syms, BENCH], period="1y", progress=False,
+def build_industry(name: str, spec: dict, fx: dict) -> dict:
+    tiers_def = spec["tiers"]
+    syms = [t[0] for tier in tiers_def.values() for t in tier]
+    bench_sym = spec["bench"]
+    raw = yf.download([*syms, bench_sym], period="1y", progress=False,
                       auto_adjust=True)["Close"]
     hist = {c: raw[c] for c in raw.columns}
 
-    bench = hist.get(BENCH)
+    bench = hist.get(bench_sym)
     bench_ret = {d: ret(bench, d) for d in (1, 5, 20, 60)} if bench is not None else {}
-    bench_ytd = ytd(bench) if bench is not None else None
 
-    jobs = [(sym, name, short, country, tier, hist, bench_ret)
-            for tier, rows in TIERS.items() for sym, name, short, country in rows]
+    jobs = [(sym, nm, short, country, tier, hist, bench_ret)
+            for tier, rows in tiers_def.items() for sym, nm, short, country in rows]
     with ThreadPoolExecutor(max_workers=8) as pool:
         rows = [r for r in pool.map(fetch, jobs) if r]
 
-    fx = fx_table()
     for r in rows:
         rate = fx.get(r["ccy"], 0.0)
+        if r["ccy"] in PENCE:
+            rate = fx.get("GBP", 0.0) / 100.0
         r["cap_usd"] = round(r["cap_local"] * rate, 0) if r["cap_local"] else None
 
-    # 계층 집계 — 시총가중. 단순평균을 쓰면 소형주가 계층 방향을 뒤집는다
     tiers = []
-    for tier in TIERS:
+    for tier in tiers_def:
         members = [r for r in rows if r["tier"] == tier]
         if not members:
             continue
@@ -249,8 +323,31 @@ def main() -> None:
         agg["cap_usd"] = sum(r["cap_usd"] or 0 for r in members)
         tiers.append(agg)
 
-    # 시총 점유율 — 매일 도는 자동 지표. 매출 점유율과 성격이 다르므로 분리해 담는다
-    mem = [r for r in rows if r["tier"] == "메모리" and r.get("cap_usd")]
+    print(f"[{name}] {len(rows)}종목 · {len(tiers)}계층")
+    return {
+        "name": name,
+        "bench": {"sym": bench_sym, "name": spec["bench_name"],
+                  "level": round(float(bench.dropna().iloc[-1]), 2) if bench is not None else None,
+                  "d1": bench_ret.get(1), "d5": bench_ret.get(5),
+                  "d20": bench_ret.get(20), "d60": bench_ret.get(60),
+                  "ytd": ytd(bench) if bench is not None else None},
+        "tier_order": list(tiers_def),
+        "tiers": tiers,
+        "items": rows,
+    }
+
+
+def main() -> None:
+    fx = fx_table()
+    industries = {}
+    for name, spec in INDUSTRIES.items():
+        try:
+            industries[name] = build_industry(name, spec, fx)
+        except Exception as exc:
+            print(f"[{name}] 실패: {exc}")
+
+    semi = industries.get("반도체", {})
+    mem = [r for r in semi.get("items", []) if r["tier"] == "메모리" and r.get("cap_usd")]
     mem_total = sum(r["cap_usd"] for r in mem)
     cap_share = [{"name": r["short"], "sym": r["sym"],
                   "share": round(r["cap_usd"] / mem_total * 100, 1),
@@ -259,22 +356,14 @@ def main() -> None:
 
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "bench": {"sym": BENCH, "name": "필라델피아 반도체지수",
-                  "level": round(float(bench.dropna().iloc[-1]), 2) if bench is not None else None,
-                  **{k: v for k, v in bench_ret.items()}},
-        "tier_order": list(TIERS),
-        "tiers": tiers,
-        "items": rows,
-        "memory": {"cap_share": cap_share, **memshare.build(),
-                   "margins": margins()},
-    }
-    # bench_ret의 키가 int라 JSON에서 문자열이 된다. 명시적으로 정리한다
-    payload["bench"] = {
-        "sym": BENCH, "name": "필라델피아 반도체지수",
-        "level": payload["bench"]["level"],
-        "d1": bench_ret.get(1), "d5": bench_ret.get(5),
-        "d20": bench_ret.get(20), "d60": bench_ret.get(60),
-        "ytd": bench_ytd,
+        "industry_order": list(industries),
+        "industries": industries,
+        # 하위호환 — 기존 화면이 참조하던 최상위 키를 반도체로 유지한다
+        "bench": semi.get("bench"),
+        "tier_order": semi.get("tier_order"),
+        "tiers": semi.get("tiers"),
+        "items": semi.get("items"),
+        "memory": {"cap_share": cap_share, **memshare.build(), "margins": margins()},
     }
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
@@ -284,7 +373,8 @@ def main() -> None:
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, OUT)
-    print(f"완료: {len(rows)}종목 · {len(tiers)}계층 → {OUT}")
+    total = sum(len(v["items"]) for v in industries.values())
+    print(f"완료: {len(industries)}개 산업 · {total}종목 → {OUT}")
 
 
 if __name__ == "__main__":
