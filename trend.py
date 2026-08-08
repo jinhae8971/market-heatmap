@@ -21,7 +21,7 @@ import pandas as pd
 import yfinance as yf
 
 OUT = "docs/trend.json"
-PERIOD = "3y"   # 화면에서 1M~3Y를 자르므로 넉넉히 받아 둔다
+PERIOD = "5y"   # 화면에서 1M~5Y를 자르므로 넉넉히 받아 둔다
 
 # (심볼, 표시명, 국가, 통화)
 INDICES = [
@@ -42,6 +42,15 @@ INDICES = [
     ("CL=F", "WTI 원유", "CM", "USD"),
 ]
 
+# 국채 금리 — 가격이 아니라 '수익률(%)'이라 정규화 대상이 아니다.
+# 100 기준 정규화를 하면 "금리가 2배 올랐다" 같은 무의미한 숫자가 나온다.
+# 그래서 별도 패널에 절대값으로 그리고, 10Y-2Y 스프레드가 음수인 구간을
+# 역전 구간으로 표시한다.
+YIELDS = [
+    ("^TNX", "미국 10년물", 10),
+    ("2YY=F", "미국 2년물", 2),
+]
+
 # 국가별 통화 → USD 환산에 쓸 환율 심볼 (USD/XXX 호가이므로 나눈다)
 FX = {"KRW": "KRW=X", "JPY": "JPY=X", "TWD": "TWD=X"}
 
@@ -59,7 +68,8 @@ def series_of(frame: pd.DataFrame, sym: str) -> pd.Series | None:
 
 def main() -> None:
     syms = [i[0] for i in INDICES]
-    raw = yf.download([*syms, *FX.values()], period=PERIOD,
+    ysyms = [y[0] for y in YIELDS]
+    raw = yf.download([*syms, *ysyms, *FX.values()], period=PERIOD,
                       progress=False, auto_adjust=True)["Close"]
 
     fx_series = {ccy: series_of(raw, sym) for ccy, sym in FX.items()}
@@ -104,10 +114,46 @@ def main() -> None:
                    [None if pd.isna(v) else round(float(v), 6) for v in usd],
         })
 
+    # 금리 패널 + 역전 구간
+    yields, spread = [], []
+    ymap = {}
+    for sym, name, tenor in YIELDS:
+        y = series_of(raw, sym)
+        if y is None:
+            print(f"[trend] {sym} 금리 시계열 없음 — 제외")
+            continue
+        aligned = y.reindex(idx).ffill()
+        ymap[tenor] = aligned
+        yields.append({
+            "sym": sym, "name": name, "tenor": tenor,
+            "values": [None if pd.isna(v) else round(float(v), 3) for v in aligned],
+        })
+
+    inversions = []
+    if 10 in ymap and 2 in ymap:
+        diff = (ymap[10] - ymap[2])
+        spread = [None if pd.isna(v) else round(float(v), 3) for v in diff]
+        # 역전(스프레드 < 0) 구간을 [시작, 끝] 인덱스 쌍으로 압축한다.
+        # 하루짜리 노이즈는 버린다 — 화면에 실선처럼 보이기만 하고 의미가 없다.
+        start = None
+        for i, v in enumerate(diff):
+            neg = (not pd.isna(v)) and v < 0
+            if neg and start is None:
+                start = i
+            elif not neg and start is not None:
+                if i - start >= 3:
+                    inversions.append([start, i - 1])
+                start = None
+        if start is not None and len(diff) - start >= 3:
+            inversions.append([start, len(diff) - 1])
+
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "dates": dates,
         "items": items,
+        "yields": yields,
+        "spread": spread,
+        "inversions": inversions,
         "fx": {ccy: (None if s is None else round(float(s.dropna().iloc[-1]), 2))
                for ccy, s in fx_series.items()},
     }
@@ -120,7 +166,8 @@ def main() -> None:
         os.fsync(f.fileno())
     os.replace(tmp, OUT)
     size = os.path.getsize(OUT) / 1024
-    print(f"완료: {len(items)}개 지수 · {len(dates)}일 · {size:.0f}KB → {OUT}")
+    print(f"완료: {len(items)}개 지수 · 금리 {len(yields)}종 · "
+          f"역전 {len(inversions)}구간 · {len(dates)}일 · {size:.0f}KB → {OUT}")
 
 
 if __name__ == "__main__":
