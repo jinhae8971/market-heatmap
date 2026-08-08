@@ -8,8 +8,8 @@
  *   (1) install에서 cache:'reload'로 HTTP 캐시를 우회하고
  *   (2) HTML은 아예 네트워크 우선으로 돌린다.
  */
-const SHELL = 'heatmap-shell-v6';
-const RUNTIME = 'heatmap-runtime-v6';
+const SHELL = 'heatmap-shell-v7';
+const RUNTIME = 'heatmap-runtime-v7';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png'
