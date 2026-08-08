@@ -29,8 +29,11 @@ import pandas as pd
 import yfinance as yf
 
 OUT = "docs/sentiment.json"
-LOOKBACK = "2y"          # 백분위 계산에 쓸 기간
-HIST_DAYS = 180          # 화면에 그릴 종합지수 추이
+# 5년 추이를 그리려면 그보다 1년 더 받아야 한다.
+# 롤링 250일 백분위는 첫 1년치를 소모하기 때문이다.
+LOOKBACK = "6y"
+HIST_DAYS = 1260         # 약 5년(거래일)
+BENCH_IDX = {"미국": "^IXIC", "한국": "^KS11"}
 
 # 비율형 구성요소: (이름, 분자, 분모, 설명)
 RATIOS_US = [
@@ -58,9 +61,16 @@ VOL_US = "^VIX"
 FX_KR = "KRW=X"          # 원화 약세 = 위험회피
 
 
+PCT_WINDOW = 504   # 약 2년(거래일)
+
+
 def pct_rank(series: pd.Series) -> float | None:
-    """마지막 값의 과거 대비 백분위(0~100)."""
-    s = series.dropna()
+    """마지막 값의 최근 2년 대비 백분위(0~100).
+
+    데이터는 5년 추이를 위해 6년치를 받지만, 현재 점수의 기준은 2년으로 고정한다.
+    기준 기간이 바뀌면 같은 지표가 다른 점수로 나와 과거 판단과 비교가 안 된다.
+    """
+    s = series.dropna().tail(PCT_WINDOW)
     if len(s) < 60:
         return None
     return round(float((s < s.iloc[-1]).mean()) * 100, 1)
@@ -209,8 +219,12 @@ def build_market(name: str, px: pd.DataFrame, ratios, breadth_syms,
     return {"name": name, "score": total, "components": comps}
 
 
-def history(px: pd.DataFrame, ratios, vol_sym: str | None) -> list[dict]:
-    """종합지수 추이. 구성요소별 롤링 백분위를 매일 평균한다."""
+def history(px: pd.DataFrame, ratios, vol_sym: str | None,
+            idx_sym: str | None = None) -> list[dict]:
+    """종합지수 추이 + 같은 날짜의 지수 종가.
+
+    지수를 함께 실어야 '센티멘트가 지수를 이끄는가, 따라가는가'를 볼 수 있다.
+    센티멘트만 그린 그래프는 예쁘지만 판단에 쓰이지 않는다."""
     parts = []
     for _, num, den, _ in ratios:
         ser = ratio_series(px, num, den)
@@ -229,8 +243,60 @@ def history(px: pd.DataFrame, ratios, vol_sym: str | None) -> list[dict]:
         return []
     df = pd.concat(parts, axis=1).dropna(how="all")
     avg = df.mean(axis=1).dropna().tail(HIST_DAYS)
-    return [{"d": i.strftime("%Y-%m-%d"), "v": round(float(x), 1)}
-            for i, x in avg.items()]
+
+    idx = None
+    if idx_sym:
+        try:
+            idx = px[idx_sym].reindex(avg.index).ffill()
+        except KeyError:
+            print(f"[sent] {idx_sym} 지수 없음 — 추이에 지수 미표시")
+
+    out = []
+    for i, x in avg.items():
+        row = {"d": i.strftime("%Y-%m-%d"), "v": round(float(x), 1)}
+        if idx is not None and not pd.isna(idx.get(i, np.nan)):
+            row["p"] = round(float(idx[i]), 2)
+        out.append(row)
+    return out
+
+
+def forward_stats(hist: list[dict]) -> dict:
+    """센티멘트 수준과 '이후' 수익률의 관계.
+
+    동시점 상관은 거의 항상 양수로 나온다 — 오르면 심리가 좋아지니 당연하다.
+    판단에 쓰이는 건 '지금 수준이 앞으로 무엇을 뜻하는가'이므로 선행 관계를 본다.
+    """
+    rows = [h for h in hist if "p" in h]
+    if len(rows) < 300:
+        return {}
+    v = np.array([h["v"] for h in rows], dtype=float)
+    p = np.array([h["p"] for h in rows], dtype=float)
+
+    out = {"n": len(rows)}
+    for horizon in (20, 60):
+        fwd = np.full(len(p), np.nan)
+        fwd[:-horizon] = (p[horizon:] / p[:-horizon] - 1) * 100
+        mask = ~np.isnan(fwd)
+        if mask.sum() < 100:
+            continue
+        out[f"corr{horizon}"] = round(float(np.corrcoef(v[mask], fwd[mask])[0, 1]), 3)
+
+        buckets = []
+        for lo, hi in [(0, 20), (20, 40), (40, 60), (60, 80), (80, 101)]:
+            sel = mask & (v >= lo) & (v < hi)
+            if sel.sum() >= 20:
+                buckets.append({"range": f"{lo}~{hi if hi <= 100 else 100}",
+                                "n": int(sel.sum()),
+                                "avg": round(float(np.nanmean(fwd[sel])), 2)})
+        out[f"buckets{horizon}"] = buckets
+
+    # 동시점 상관도 참고로 남긴다 (20일 수익률 기준)
+    ret20 = np.full(len(p), np.nan)
+    ret20[20:] = (p[20:] / p[:-20] - 1) * 100
+    m2 = ~np.isnan(ret20)
+    if m2.sum() > 100:
+        out["corr_same"] = round(float(np.corrcoef(v[m2], ret20[m2])[0, 1]), 3)
+    return out
 
 
 def main() -> None:
@@ -240,7 +306,8 @@ def main() -> None:
     us_syms = [t[0] for t in universe.US][:30]
 
     need = sorted({s for _, a, b, _ in RATIOS_US + RATIOS_KR for s in (a, b)}
-                  | {VOL_US, FX_KR, RV_KR} | set(LEV_KR) | set(kr_syms) | set(us_syms))
+                  | {VOL_US, FX_KR, RV_KR} | set(LEV_KR) | set(BENCH_IDX.values())
+                  | set(kr_syms) | set(us_syms))
     raw = yf.download(need, period=LOOKBACK, progress=False, auto_adjust=True)
     px = raw["Close"]
     vol_df = raw["Volume"]
@@ -248,11 +315,15 @@ def main() -> None:
     us = build_market("미국", px, RATIOS_US, us_syms, VOL_US, None)
     kr = build_market("한국", px, RATIOS_KR, kr_syms, None, FX_KR, vol_df)
 
+    hist = {"미국": history(px, RATIOS_US, VOL_US, BENCH_IDX["미국"]),
+            "한국": history(px, RATIOS_KR, None, BENCH_IDX["한국"])}
+
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "markets": [us, kr],
-        "history": {"미국": history(px, RATIOS_US, VOL_US),
-                    "한국": history(px, RATIOS_KR, None)},
+        "history": hist,
+        "stats": {k: forward_stats(v) for k, v in hist.items()},
+        "bench_idx": BENCH_IDX,
         "kr_note": ("VKOSPI·신용잔고·투자자예탁금은 무료 API로 받을 수 없어 "
                     "레버리지/인버스 거래대금 비율과 실현변동성으로 대신한다."),
         "note": ("설문 기반 심리지표가 아니라 가격에 드러난 위험선호를 계산한 대리지표다. "

@@ -89,19 +89,27 @@
   <div class="comp" id="comp"></div>
   <p class="hint" id="chint"></p>
 
-  <h2>추이 · 최근 6개월</h2>
-  <div class="chart"><svg id="hist" viewBox="0 0 340 180" preserveAspectRatio="none"></svg></div>
+  <h2>추이 · 지수 대비</h2>
+  <div class="segs" id="span"></div>
+  <div class="chart"><svg id="hist" viewBox="0 0 340 200" preserveAspectRatio="none"
+       style="height:200px"></svg>
+    <div class="rlab" id="hlab" style="padding:6px 2px 0"></div></div>
+
+  <h2>선행성</h2>
+  <p class="hint" id="corrnote"></p>
+  <div class="comp" id="fwd"></div>
 
   <footer id="foot"></footer>
 </div>
 
 <script>
-const APP_VERSION="1.7.3";
+const APP_VERSION="1.8.0";
 if('serviceWorker' in navigator)
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 
 const COL={'미국':'#e8edf2','한국':'#e2394a'};
-let D=null, mkt='미국';
+let D=null, mkt='미국', span=1260;
+const SPANS=[['1년',252],['3년',756],['5년',1260]];
 
 /* 점수 → 말. 숫자만 있으면 60이 높은 건지 낮은 건지 매번 헷갈린다. */
 function label(v){
@@ -132,8 +140,9 @@ fetch('sentiment.json?t='+Date.now()).then(r=>r.json()).then(d=>{
       <div class="rlab"><span>0 공포</span><span>50</span><span>탐욕 100</span></div>
     </div>`).join('');
 
-  seg('mkt', d.markets.map(m=>[m.name,m.name]), mkt, v=>{mkt=v;comps();hist();});
-  comps(); hist();
+  seg('mkt', d.markets.map(m=>[m.name,m.name]), mkt, v=>{mkt=v;comps();hist();fwd();});
+  seg('span', SPANS.map(([l,n])=>[String(n),l]), String(span), v=>{span=+v;hist();});
+  comps(); hist(); fwd();
 
   document.getElementById('foot').innerHTML=
     d.note+'<br>v'+APP_VERSION+' · 생성 '+d.generated_at;
@@ -176,11 +185,12 @@ function comps(){
 }
 
 function hist(){
-  const rows=(D.history||{})[mkt]||[];
+  const all=(D.history||{})[mkt]||[];
+  const rows=all.slice(-span);
   const svg=document.getElementById('hist');
   if(rows.length<2){ svg.innerHTML=`<text x="170" y="90" fill="#8b97a4"
     text-anchor="middle" font-size="11">추이 데이터가 부족합니다</text>`; return; }
-  const W=340,H=180,P={l:26,r:10,t:10,b:20};
+  const W=340,H=200,P={l:26,r:30,t:10,b:20};
   const X=i=>P.l+i/(rows.length-1)*(W-P.l-P.r);
   const Y=v=>H-P.b-v/100*(H-P.t-P.b);
 
@@ -194,6 +204,21 @@ function hist(){
     g+=`<text x="${P.l-4}" y="${Y(v)+3}" fill="#8b97a4" font-size="8"
          text-anchor="end">${v}</text>`;});
 
+  // 지수를 오른쪽 축에 겹친다. 축이 다르므로 보조선처럼 얇게 그린다.
+  const ps=rows.map(r=>r.p).filter(v=>v!==undefined);
+  if(ps.length>2){
+    const plo=Math.min(...ps), phi=Math.max(...ps);
+    const PY=v=>H-P.b-(v-plo)/((phi-plo)||1)*(H-P.t-P.b);
+    let pd='',started=false;
+    rows.forEach((r,i)=>{ if(r.p===undefined) return;
+      pd+=(started?'L':'M')+X(i).toFixed(1)+' '+PY(r.p).toFixed(1)+' '; started=true;});
+    g+=`<path d="${pd}" fill="none" stroke="#f0b429" stroke-width="1.1"
+         stroke-opacity=".75"/>`;
+    [plo,phi].forEach(v=>{
+      g+=`<text x="${W-P.r+3}" y="${PY(v)+3}" fill="#f0b429" font-size="7.5">
+        ${v>=10000?(v/1000).toFixed(0)+'k':v.toFixed(0)}</text>`;});
+  }
+
   let d='';
   rows.forEach((r,i)=>{ d+=(i?'L':'M')+X(i).toFixed(1)+' '+Y(r.v).toFixed(1)+' '; });
   g+=`<path d="${d}" fill="none" stroke="${COL[mkt]}" stroke-width="1.6"/>`;
@@ -203,6 +228,40 @@ function hist(){
     g+=`<text x="${X(i)}" y="${H-6}" fill="#8b97a4" font-size="8"
          text-anchor="${i===0?'start':i===rows.length-1?'end':'middle'}">${rows[i].d.slice(2,7)}</text>`;});
   svg.innerHTML=g;
+  document.getElementById('hlab').innerHTML=
+    `<span style="color:${COL[mkt]}">━ 센티멘트 (왼쪽 0~100)</span>`+
+    `<span style="color:#f0b429">━ ${(D.bench_idx||{})[mkt]||''} (오른쪽)</span>`;
+}
+
+/* 선행성 — '지금 이 수준이 앞으로 무엇을 뜻했나'를 과거로 답한다.
+   동시점 상관은 거의 항상 양수라(오르면 심리가 좋아지니) 판단에 쓰이지 않는다. */
+function fwd(){
+  const st=(D.stats||{})[mkt]||{};
+  const el=document.getElementById('fwd');
+  const note=document.getElementById('corrnote');
+  if(!st.buckets60){ el.innerHTML=''; note.textContent='표본이 부족합니다.'; return; }
+
+  note.textContent=
+    `동시점 상관 ${st.corr_same} · 이후 20일 ${st.corr20} · 이후 60일 ${st.corr60} `+
+    `(표본 ${st.n}일). 동시점은 높고 선행 상관은 0에 가깝다면, 심리는 시장을 `+
+    `예고하는 게 아니라 따라간다는 뜻이다.`;
+
+  const rows=st.buckets60;
+  const mx=Math.max(...rows.map(r=>Math.abs(r.avg)))||1;
+  el.innerHTML=rows.map(r=>{
+    const w=Math.abs(r.avg)/mx*50;
+    const pos=r.avg>=0;
+    return `<div class="crow">
+      <div class="nm">센티 ${r.range}<em>표본 ${r.n}일</em></div>
+      <div class="cbar"><div class="mid"></div>
+        <div class="f" style="${pos?`left:50%;width:${w}%`:`left:${50-w}%;width:${w}%`};
+          background:${pos?'var(--greed)':'var(--fear)'}"></div></div>
+      <div class="v" style="color:${pos?'var(--greed)':'var(--fear)'}">${
+        (r.avg>=0?'+':'')+r.avg}%</div>
+    </div>`;
+  }).join('')+
+  `<div style="font-size:10.5px;color:var(--dim);padding:8px 2px 0">
+     각 구간에 있던 날들의 <b>이후 60일 평균 수익률</b>. 과거 5년 표본이며 미래를 보장하지 않는다.</div>`;
 }
 </script>
 </body>
