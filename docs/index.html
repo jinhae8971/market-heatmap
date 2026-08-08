@@ -129,6 +129,9 @@ fetch('heatmap.json?t='+Date.now()).then(r=>r.json()).then(d=>{
     tabs.appendChild(b);
   });
   draw();
+  // 웹폰트가 늦게 로드되면 폴백 폰트 기준으로 잰 폭이 실제와 달라져
+  // 라벨이 타일 밖으로 넘친다. 폰트 준비 후 한 번 더 그린다.
+  if(document.fonts&&document.fonts.ready) document.fonts.ready.then(draw);
   window.addEventListener('resize',()=>{clearTimeout(window._t);
     window._t=setTimeout(draw,180);});
 }).catch(()=>{document.getElementById('msg').textContent=
@@ -173,8 +176,14 @@ function draw(){
       .text(d=>(d.x1-d.x0)>52?d.data.name:'');
   }
 
+  const defs=svg.append('defs');
   const g=svg.selectAll('.cell').data(root.leaves()).join('g')
     .attr('class','cell').attr('transform',d=>`translate(${d.x0},${d.y0})`)
+    .attr('clip-path',(d,i)=>{
+      defs.append('clipPath').attr('id','clip'+i).attr('clipPathUnits','userSpaceOnUse')
+        .append('rect').attr('width',d.x1-d.x0).attr('height',d.y1-d.y0);
+      return `url(#clip${i})`;
+    })
     .style('cursor','pointer').on('click',(e,d)=>open(d.data));
 
   g.append('rect').attr('width',d=>d.x1-d.x0).attr('height',d=>d.y1-d.y0)
@@ -189,7 +198,7 @@ function draw(){
     const w=d.x1-d.x0, h=d.y1-d.y0;
     if(w<24||h<16) return;
     const n=d3.select(this);
-    const pad=5;
+    const pad=8;
 
     for(const text of [d.data.name, short(d.data)]){
       if(!text) continue;
