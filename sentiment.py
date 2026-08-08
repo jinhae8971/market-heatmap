@@ -146,9 +146,12 @@ def build_market(name: str, px: pd.DataFrame, ratios, breadth_syms,
             v = px[vol_sym].dropna()
             r = pct_rank(v)
             if r is not None:
-                # 변동성은 높을수록 공포다. 방향을 뒤집어야 다른 구성요소와 같은 축이 된다
-                comps.append({"label": "변동성 (역방향)", "score": round(100 - r, 1),
-                              "note": "VIX가 낮을수록 안심",
+                # 변동성은 이름 그대로 '변동성'으로 보여준다.
+                # 화면에는 백분위(display)를, 종합 평균에는 뒤집은 값(score)을 쓴다.
+                # 이름과 숫자가 반대를 가리키면 읽는 사람이 매번 헷갈린다.
+                comps.append({"label": "변동성", "score": round(100 - r, 1),
+                              "display": r, "invert": True,
+                              "note": f"VIX {float(v.iloc[-1]):.1f} · 높을수록 공포",
                               "value": round(float(v.iloc[-1]), 2), "d20": None})
         except KeyError:
             print(f"[sent] {name} 변동성 지표 없음")
@@ -159,8 +162,8 @@ def build_market(name: str, px: pd.DataFrame, ratios, breadth_syms,
             r = pct_rank(f)
             if r is not None:
                 # USD/KRW가 높을수록 원화 약세 = 위험회피
-                comps.append({"label": "원화 강세 (역방향)", "score": round(100 - r, 1),
-                              "note": "원화가 강할수록 위험선호",
+                comps.append({"label": "원화 강세", "score": round(100 - r, 1),
+                              "note": f"USD/KRW {float(f.iloc[-1]):,.0f} · 강할수록 위험선호",
                               "value": round(float(f.iloc[-1]), 1), "d20": None})
         except KeyError:
             pass
@@ -185,8 +188,11 @@ def build_market(name: str, px: pd.DataFrame, ratios, breadth_syms,
                     mx = float(px[RV_KR].dropna().pct_change().tail(20).abs().max() * 100)
                 except Exception:
                     mx = None
-                comps.append({"label": "실현변동성 (역방향)", "score": round(100 - r, 1),
-                              "note": "코스피 20일 변동성 (VKOSPI 대용)",
+                comps.append({"label": "실현변동성", "score": round(100 - r, 1),
+                              "display": r, "invert": True,
+                              "note": (f"코스피 20일 연율 {float(rv.iloc[-1]):.0f}%"
+                                       f" · 하루 ±{float(rv.iloc[-1])/15.87:.1f}% 수준"
+                                       " · 높을수록 공포"),
                               "value": round(float(rv.iloc[-1]), 1), "d20": None,
                               "flag": (None if mx is None or mx < 6
                                        else f"최근 20일 최대 일간 변동 {mx:.1f}%")})

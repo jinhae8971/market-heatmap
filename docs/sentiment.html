@@ -96,7 +96,7 @@
 </div>
 
 <script>
-const APP_VERSION="1.7.2";
+const APP_VERSION="1.7.3";
 if('serviceWorker' in navigator)
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 
@@ -153,18 +153,26 @@ function seg(id,opts,cur,cb){
 
 function comps(){
   const m=D.markets.find(x=>x.name===mkt);
-  document.getElementById('comp').innerHTML=m.components.map(c=>`
-    <div class="crow">
-      <div class="nm">${c.label}<em>${c.note}</em></div>
+  document.getElementById('comp').innerHTML=m.components.map(c=>{
+    // invert 항목(변동성)은 이름 그대로 읽히도록 백분위를 그대로 보여준다.
+    // 대신 색은 공포 방향으로 칠해서 '큰 숫자 = 공포'가 눈에 들어오게 한다.
+    const shown = c.invert ? c.display : c.score;
+    const color = c.invert ? scoreCol(100-c.display) : scoreCol(c.score);
+    return `<div class="crow">
+      <div class="nm">${c.label}${c.invert?'<sup style="color:var(--fear);font-size:9px"> 역</sup>':''}
+        <em>${c.note}</em></div>
       <div class="cbar"><div class="mid"></div>
-        <div class="f" style="width:${c.score}%;background:${scoreCol(c.score)}"></div></div>
-      <div class="v" style="color:${scoreCol(c.score)}">${c.score}</div>
+        <div class="f" style="width:${shown}%;background:${color}"></div></div>
+      <div class="v" style="color:${color}">${shown}</div>
     </div>${c.flag?`<div style="font-size:10.5px;color:var(--dim);padding:0 0 8px 2px">
-      ${c.flag}</div>`:''}`).join('');
-  document.getElementById('chint').textContent=
+      ${c.flag}</div>`:''}`;
+  }).join('');
+  const hasInv=m.components.some(c=>c.invert);
+  const invNote=hasInv?'"역" 표시 항목은 값이 클수록 공포이며, 종합 점수에는 뒤집어 반영된다. ':'';
+  document.getElementById('chint').textContent= invNote + (
     mkt==='한국'
       ? (D.kr_note||'')+' 레버리지/인버스 거래대금 비율은 개인이 어느 방향에 실제로 베팅했는지를 보여준다.'
-      : '각 구성요소는 2년 백분위다. 50이면 지난 2년의 딱 중간, 90이면 상위 10% 수준으로 위험을 사고 있다는 뜻이다.';
+      : '각 구성요소는 2년 백분위다. 50이면 지난 2년의 딱 중간, 90이면 상위 10% 수준으로 위험을 사고 있다는 뜻이다.');
 }
 
 function hist(){
