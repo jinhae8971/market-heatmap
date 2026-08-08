@@ -88,6 +88,7 @@
     <div class="ttl"><h1>마켓 히트맵</h1><span id="stamp">로딩</span></div>
     <div class="tabs" id="tabs"></div>
   </header>
+  <div class="bar2" id="bar2"></div>
   <div class="bar">
     <div class="scale">
       <span>-3%</span>
@@ -101,6 +102,7 @@
       <button class="grp on" id="grp">섹터 묶기</button>
     </div>
   </div>
+  <div class="health" id="health"></div>
   <div id="map"><div id="msg">불러오는 중…</div></div>
 </div>
 
@@ -109,11 +111,12 @@
   <h2 id="s-name">–</h2>
   <div class="sub" id="s-sym">–</div>
   <div id="s-rows"></div>
+  <button id="s-star">☆ 관심종목에 담기</button>
   <button id="s-close">닫기</button>
 </div>
 
 <script>
-const APP_VERSION="1.4.0";
+const APP_VERSION="1.5.0";
 if('serviceWorker' in navigator)
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js')
     .catch(e=>console.warn('SW 등록 실패',e)));
@@ -126,6 +129,53 @@ const fmtPct=v=>(v>=0?'+':'')+v.toFixed(2)+'%';
 const fmtNum=v=>v>=1000?v.toLocaleString('en-US',{maximumFractionDigits:0}):v.toFixed(2);
 
 let DATA=null, view='ALL', grouped=true, soften=false;
+let period='chg', inUSD=false, starsOnly=false;
+const PERIOD_LABEL={chg:'1일',d5:'1주',d20:'1개월',ytd:'YTD'};
+
+/* 관심종목은 브라우저에 남긴다. 서버가 없어도 '내 종목'이 성립한다. */
+function stars(){ try{ return new Set(JSON.parse(localStorage.getItem('mh_stars')||'[]')); }
+  catch(e){ return new Set(); } }
+function toggleStar(sym){
+  const s=stars();
+  s.has(sym)?s.delete(sym):s.add(sym);
+  localStorage.setItem('mh_stars',JSON.stringify([...s]));
+}
+
+/* 등락률을 달러 기준으로 환산한다. 현지 통화 수익률만 보면
+   원화가 7% 빠진 구간에서 한국 종목이 실제보다 좋아 보인다. */
+function chgOf(r){
+  const v=r[period];
+  if(v===null||v===undefined) return null;
+  if(!inUSD) return v;
+  const f=(DATA.fx_perf||{})[r.ccy];
+  if(!f||f[period]===null||f[period]===undefined) return v;
+  return v+f[period];
+}
+
+function buildBar2(){
+  const el=document.getElementById('bar2');
+  const mk=(label,on,cb)=>{
+    const b=document.createElement('button');
+    b.className='tab'+(on?' on':''); b.textContent=label;
+    b.onclick=()=>{cb(b);}; return b;
+  };
+  el.innerHTML='';
+  Object.entries(PERIOD_LABEL).forEach(([k,label])=>{
+    el.appendChild(mk(label,k===period,b=>{
+      period=k;
+      [...el.querySelectorAll('.tab')].slice(0,4).forEach(c=>c.classList.remove('on'));
+      b.classList.add('on'); draw(); stampArea();
+    }));
+  });
+  el.appendChild(mk('USD',inUSD,b=>{inUSD=!inUSD;b.classList.toggle('on',inUSD);
+    draw(); stampArea();}));
+  el.appendChild(mk('★ 내 종목',starsOnly,b=>{
+    if(!starsOnly && stars().size===0){
+      alert('종목을 눌러 상세를 연 뒤 ★를 눌러 담아 주세요.'); return;
+    }
+    starsOnly=!starsOnly; b.classList.toggle('on',starsOnly); draw();
+  }));
+}
 
 fetch('heatmap.json?t='+Date.now()).then(r=>r.json()).then(d=>{
   DATA=d;
@@ -142,6 +192,11 @@ fetch('heatmap.json?t='+Date.now()).then(r=>r.json()).then(d=>{
       b.classList.add('on');draw();};
     tabs.appendChild(b);
   });
+  buildBar2();
+  const bad=(d.health||[]).filter(h=>!h.ok);
+  document.getElementById('health').innerHTML = bad.length
+    ? '<b>수집 실패: '+bad.map(h=>h.step).join(', ')+'</b> — 아래 수치는 이전 값일 수 있습니다'
+    : (d.health||[]).map(h=>h.step+' '+h.n).join(' · ');
   draw();
   // 웹폰트가 늦게 로드되면 폴백 폰트 기준으로 잰 폭이 실제와 달라져
   // 라벨이 타일 밖으로 넘친다. 폰트 준비 후 한 번 더 그린다.
@@ -161,15 +216,20 @@ document.getElementById('s-close').onclick=()=>
 function stampArea(){
   const el=document.getElementById('stamp');
   const base=el.dataset.base||(el.dataset.base=el.textContent);
-  // 완화를 켜면 면적이 더 이상 시총 비례가 아니다. 화면에 명시한다.
-  el.textContent=soften?base+' · 면적 완화':base;
+  // 무엇을 보고 있는지 화면에 항상 적는다. 기간·통화·면적은 다 오해를 부르는 축이다.
+  let t=base+' · '+PERIOD_LABEL[period];
+  if(inUSD) t+=' · USD';
+  if(soften) t+=' · 면적 완화';
+  el.textContent=t;
 }
 
 function rows(){
-  if(view==='ALL') return Object.entries(DATA.markets)
+  let out;
+  if(view==='ALL') out=Object.entries(DATA.markets)
     .flatMap(([m,v])=>v.items.map(x=>({...x,mkt:v.label})));
-  const v=DATA.markets[view];
-  return v.items.map(x=>({...x,mkt:v.label}));
+  else { const v=DATA.markets[view]; out=v.items.map(x=>({...x,mkt:v.label})); }
+  if(starsOnly){ const st=stars(); out=out.filter(x=>st.has(x.sym)); }
+  return out;
 }
 
 function draw(){
@@ -177,7 +237,9 @@ function draw(){
   const W=el.clientWidth, H=el.clientHeight;
   if(!W||!H) return;
   const data=rows().filter(r=>r.cap_usd>0);
-  if(!data.length){el.innerHTML='<div id="msg">표시할 종목이 없습니다.</div>';return;}
+  if(!data.length){el.innerHTML='<div id="msg">'+
+    (starsOnly?'담아 둔 종목이 없습니다. ★ 내 종목을 끄고 종목을 눌러 담아 주세요.'
+             :'표시할 종목이 없습니다.')+'</div>';return;}
 
   // 그룹 키: 전체 보기에서는 시장, 개별 시장에서는 섹터
   const key=r=>view==='ALL'?r.mkt:r.sector;
@@ -211,7 +273,7 @@ function draw(){
     .style('cursor','pointer').on('click',(e,d)=>open(d.data));
 
   g.append('rect').attr('width',d=>d.x1-d.x0).attr('height',d=>d.y1-d.y0)
-    .attr('fill',d=>color(d.data.chg));
+    .attr('fill',d=>color(chgOf(d.data)??0));
 
   // Finviz 원칙: 모든 타일은 무언가를 말한다. 빈 상자를 남기지 않는다.
   //
@@ -261,11 +323,15 @@ function draw(){
     return true;
   }
 
+  const st=stars();
   g.each(function(d){
     const w=d.x1-d.x0, h=d.y1-d.y0;
     if(w<14||h<11) return;              // 이보다 작으면 6px도 안 들어간다
     const n=d3.select(this);
-    const pct=fmtPct(d.data.chg);
+    if(st.has(d.data.sym) && w>22 && h>16)
+      n.append('text').attr('x',w-3).attr('y',9).attr('text-anchor','end')
+        .style('font-size','9px').style('fill','#ffd166').text('★');
+    const pct=fmtPct(chgOf(d.data)??0);
     const cands=[d.data.name, d.data.short, latin(d.data)].filter(Boolean);
 
     // 1) 가로 한 줄
@@ -294,12 +360,30 @@ function draw(){
 function open(d){
   document.getElementById('s-name').textContent=d.name;
   document.getElementById('s-sym').textContent=`${d.sym} · ${d.mkt} · ${d.sector}`;
-  document.getElementById('s-rows').innerHTML=`
-    <div class="row"><i>등락률</i><b style="color:${color(d.chg)}">${fmtPct(d.chg)}</b></div>
-    <div class="row"><i>현재가</i><b>${fmtNum(d.price)} ${d.ccy}</b></div>
-    <div class="row"><i>시가총액</i><b>$${fmtCap(d.cap_usd)}</b></div>
-    ${d.ccy==='USD'?'':
-      `<div class="row"><i>현지 시총</i><b>${fmtCap(d.cap_local)} ${d.ccy}</b></div>`}`;
+
+  // 같은 섹터 평균과 비교한다. 혼자 빠진 것과 업종이 다 빠진 것은 완전히 다른 신호다.
+  const peers=rows().filter(x=>x.sector===d.sector&&x.mkt===d.mkt
+    &&x[period]!==null&&x[period]!==undefined);
+  const avg=peers.length>1
+    ? peers.reduce((a,b)=>a+b[period],0)/peers.length : null;
+  const rel=(avg===null||d[period]===null)?null:d[period]-avg;
+
+  const line=(l,v)=>`<div class="row"><i>${l}</i>
+    <b style="color:${v===null||v===undefined?'var(--dim)':color(v)}">${
+      v===null||v===undefined?'–':fmtPct(v)}</b></div>`;
+  document.getElementById('s-rows').innerHTML=
+    line('1일',d.chg)+line('1주',d.d5)+line('1개월',d.d20)+line('연초 대비',d.ytd)+
+    (rel===null?'':`<div class="row"><i>${d.sector} 평균 대비 (${PERIOD_LABEL[period]})</i>
+      <b style="color:${color(rel)}">${fmtPct(rel)}p</b></div>`)+
+    `<div class="row"><i>현재가</i><b>${fmtNum(d.price)} ${d.ccy}</b></div>
+     <div class="row"><i>시가총액</i><b>$${fmtCap(d.cap_usd)}</b></div>`+
+    (d.ccy==='USD'?'':
+      `<div class="row"><i>현지 시총</i><b>${fmtCap(d.cap_local)} ${d.ccy}</b></div>`);
+
+  const btn=document.getElementById('s-star');
+  const on=stars().has(d.sym);
+  btn.textContent=on?'★ 관심종목에서 빼기':'☆ 관심종목에 담기';
+  btn.onclick=()=>{toggleStar(d.sym);open(d);draw();};
   document.getElementById('sheet').classList.add('on');
 }
 </script>
