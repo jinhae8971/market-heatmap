@@ -63,6 +63,17 @@
   .legend{font-size:10.5px;color:var(--dim);font-family:'IBM Plex Mono',monospace;
     padding-top:2px;border-top:1px solid var(--line);margin-top:2px}
 
+  .donut{display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+    background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px}
+  .donut svg{width:150px;height:150px;flex:none}
+  .lg{flex:1;min-width:170px}
+  .lg div{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0}
+  .lg i{width:10px;height:10px;border-radius:2px;flex:none}
+  .lg b{margin-left:auto;font-family:'IBM Plex Mono',monospace}
+  .src{font-size:10.5px;color:var(--dim);margin-top:9px;font-family:'IBM Plex Mono',monospace}
+  .trendbox{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:12px 10px 8px;margin-top:9px}
+  .trendbox svg{width:100%;height:190px;display:block;overflow:visible}
   .scatter{background:var(--panel);border:1px solid var(--line);border-radius:11px;
     padding:12px 10px 8px}
   .axes{display:flex;gap:8px;margin:10px 0 8px;font-size:11.5px;color:var(--dim);
@@ -129,6 +140,18 @@
   <div class="segs" id="periods"></div>
   <div class="chain" id="chain"></div>
 
+  <h2>메모리 점유율</h2>
+  <div class="segs" id="shmode"></div>
+  <div class="donut">
+    <svg id="pie" viewBox="0 0 120 120"></svg>
+    <div class="lg" id="pielg"></div>
+  </div>
+  <div class="src" id="piesrc"></div>
+
+  <div class="trendbox"><svg id="shtrend" viewBox="0 0 340 190"
+       preserveAspectRatio="none"></svg></div>
+  <p class="hint" id="shhint"></p>
+
   <h2>상대 평가</h2>
   <p class="hint">두 지표를 축으로 놓고 보면 "싸서 안 오른 것"과 "비싸도 오른 것"이
      갈린다. 점선은 각 축의 중앙값이고, 점 크기는 시가총액이다.</p>
@@ -191,7 +214,11 @@ fetch('semi.json?t='+Date.now()).then(r=>r.json()).then(d=>{
         table();});
   sortKey='tier'; groupByTier=true;
 
-  chain(); initScatter(); scatter(); table();
+  chain();
+  seg('shmode',[['cap','시총 점유율'],['rev','DRAM 매출 점유율']],shMode,
+      v=>{shMode=v;shareView();});
+  shareView();
+  initScatter(); scatter(); table();
   document.getElementById('foot').innerHTML=
     `상대강도 = 20일 수익률 − SOX 20일 수익률 · 계층 집계는 시총가중<br>`+
     `생성 ${d.generated_at} · 공개 데이터를 가공한 참고 자료이며 투자 권유가 아닙니다`;
@@ -231,6 +258,92 @@ function chain(){
     </div>`;
   }).join('')+
   `<div class="legend">SOX ${num(D.bench[period])}% · 막대 범위 ±${max.toFixed(0)}%</div>`;
+}
+
+/* 메모리 점유율.
+   두 가지를 한 화면에 두되 절대 섞지 않는다.
+     시총 점유율 — 매일 자동 갱신. 시장이 매기는 값이지 판매량이 아니다.
+     매출 점유율 — 분기 조사기관 데이터. 실제 시장 지배력이지만 갱신이 느리다.
+   둘을 같은 파이로 보여주면 "삼성 점유율"이 두 개가 되어 오해를 부른다. */
+const SHCOL={'삼성전자':'#e2394a','SK하이닉스':'#4aa3df','하이닉스':'#4aa3df',
+  '마이크론':'#f0b429','키오시아':'#3fbf9f','샌디스크':'#a06cd5',
+  'CXMT':'#a8324a','기타':'#4a5560'};
+let shMode='cap';
+
+function donut(items){
+  const R=52, r=30, C=60;
+  let acc=0, g='', total=items.reduce((a,b)=>a+b.share,0)||100;
+  items.forEach(it=>{
+    const a0=acc/total*Math.PI*2-Math.PI/2;
+    acc+=it.share;
+    const a1=acc/total*Math.PI*2-Math.PI/2;
+    const large=(a1-a0)>Math.PI?1:0;
+    const p=(rad,a)=>[C+rad*Math.cos(a),C+rad*Math.sin(a)];
+    const [x0,y0]=p(R,a0),[x1,y1]=p(R,a1),[x2,y2]=p(r,a1),[x3,y3]=p(r,a0);
+    g+=`<path d="M${x0} ${y0} A${R} ${R} 0 ${large} 1 ${x1} ${y1}
+         L${x2} ${y2} A${r} ${r} 0 ${large} 0 ${x3} ${y3} Z"
+         fill="${SHCOL[it.name]||'#6b7784'}" stroke="#14181d" stroke-width="1"/>`;
+  });
+  const top=items[0];
+  g+=`<text x="${C}" y="${C-2}" text-anchor="middle" fill="#e8edf2"
+       font-size="15" font-weight="600" font-family="IBM Plex Mono">${top?top.share.toFixed(0):'–'}%</text>`;
+  g+=`<text x="${C}" y="${C+11}" text-anchor="middle" fill="#8b97a4"
+       font-size="8">${top?top.name:''}</text>`;
+  return g;
+}
+
+function shareView(){
+  const M=D.memory; if(!M) return;
+  let items, src, hint;
+  if(shMode==='cap'){
+    items=M.cap_share.map(x=>({name:x.name,share:x.share}));
+    src=`시가총액 기준 · 매일 자동 갱신 · 메모리 5사 합계 대비`;
+    hint=`시총 점유율은 시장이 매긴 값이지 판매량이 아니다. 매출 점유율과 벌어질수록
+          시장이 미래 구도를 다르게 보고 있다는 뜻이다.`;
+  }else{
+    const last=M.dram[M.dram.length-1];
+    items=M.vendors.map(v=>({name:v,share:last[v]})).filter(x=>x.share);
+    src=`${last.q} DRAM 매출 점유율 · ${M.source.name} · ${M.source.note} ·
+         확인 ${M.source.checked}`;
+    hint=`매출 점유율은 분기 조사기관 데이터라 갱신이 느리다. 최신 분기가 나오면
+          수동으로 반영한다.`;
+  }
+  document.getElementById('pie').innerHTML=donut(items);
+  document.getElementById('pielg').innerHTML=items.map(x=>
+    `<div><i style="background:${SHCOL[x.name]||'#6b7784'}"></i>${x.name}
+      <b>${x.share.toFixed(1)}%</b></div>`).join('');
+  document.getElementById('piesrc').textContent=src.replace(/\s+/g,' ');
+  document.getElementById('shhint').textContent=hint.replace(/\s+/g,' ');
+  shareTrend();
+}
+
+/* 분기 추이는 누적 영역으로 그린다. 선으로 그리면 5개가 엉키고,
+   "합이 100"이라는 구조가 안 보인다. */
+function shareTrend(){
+  const M=D.memory, rows=M.dram, svg=document.getElementById('shtrend');
+  const W=340,H=190,P={l:8,r:8,t:10,b:22};
+  const n=rows.length;
+  const X=i=>P.l+i/(n-1)*(W-P.l-P.r);
+  const Y=v=>H-P.b-v/100*(H-P.t-P.b);
+  let g='', base=new Array(n).fill(0);
+  M.vendors.forEach(v=>{
+    const top=rows.map((r,i)=>base[i]+(r[v]||0));
+    let d='M'+X(0)+' '+Y(base[0]);
+    rows.forEach((_,i)=>{ d+=`L${X(i)} ${Y(top[i])}`; });
+    for(let i=n-1;i>=0;i--) d+=`L${X(i)} ${Y(base[i])}`;
+    g+=`<path d="${d}Z" fill="${SHCOL[v]||'#6b7784'}" fill-opacity=".85"/>`;
+    // 계열 라벨은 마지막 분기에서 두께가 충분할 때만
+    const th=(rows[n-1][v]||0);
+    if(th>=7) g+=`<text x="${W-P.r-4}" y="${Y((base[n-1]+top[n-1])/2)+3}"
+      text-anchor="end" fill="#0b0d10" font-size="8.5" font-weight="600">${v}</text>`;
+    base=top;
+  });
+  rows.forEach((r,i)=>{
+    if(i%2===0||i===n-1)
+      g+=`<text x="${X(i)}" y="${H-7}" fill="#8b97a4" font-size="8"
+           text-anchor="${i===0?'start':i===n-1?'end':'middle'}">${r.q}</text>`;
+  });
+  svg.innerHTML=g;
 }
 
 /* 상대 평가 산점도.
