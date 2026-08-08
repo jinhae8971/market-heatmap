@@ -20,6 +20,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+import memshare
+
 OUT = "docs/semi.json"
 BENCH = "^SOX"  # 필라델피아 반도체 지수 — 이 업종의 기준선
 
@@ -117,11 +119,23 @@ def fetch(args):
         return None
     s = s.dropna()
 
+    tk = yf.Ticker(sym)
     try:
-        info = yf.Ticker(sym).info
+        info = tk.info
     except Exception as exc:
         print(f"[semi] {sym} info 실패: {exc}")
         info = {}
+
+    # .info의 marketCap은 종목·시점에 따라 비어 있다(예: MU). fast_info로 보완한다.
+    # 이 값이 비면 시총 점유율 파이에서 그 회사가 통째로 사라진다.
+    cap = info.get("marketCap")
+    if not cap:
+        try:
+            cap = tk.fast_info.get("marketCap")
+        except Exception:
+            cap = None
+    if not cap:
+        print(f"[semi] {sym} 시총 결측 — 점유율 집계에서 빠짐")
 
     px = float(s.iloc[-1])
     hi52 = info.get("fiftyTwoWeekHigh") or float(s.max())
@@ -139,7 +153,7 @@ def fetch(args):
         "sym": sym, "name": name, "short": short, "country": country, "tier": tier,
         "price": round(px, 2),
         "ccy": info.get("currency") or "USD",
-        "cap_local": info.get("marketCap"),
+        "cap_local": cap,
         "d1": r[1], "d5": r[5], "d20": r[20], "d60": r[60],
         "ytd": ytd(s),
         "rs20": rs,
@@ -186,6 +200,14 @@ def main() -> None:
         agg["cap_usd"] = sum(r["cap_usd"] or 0 for r in members)
         tiers.append(agg)
 
+    # 시총 점유율 — 매일 도는 자동 지표. 매출 점유율과 성격이 다르므로 분리해 담는다
+    mem = [r for r in rows if r["tier"] == "메모리" and r.get("cap_usd")]
+    mem_total = sum(r["cap_usd"] for r in mem)
+    cap_share = [{"name": r["short"], "sym": r["sym"],
+                  "share": round(r["cap_usd"] / mem_total * 100, 1),
+                  "cap_usd": r["cap_usd"], "d20": r["d20"]}
+                 for r in sorted(mem, key=lambda x: -x["cap_usd"])] if mem_total else []
+
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "bench": {"sym": BENCH, "name": "필라델피아 반도체지수",
@@ -194,6 +216,7 @@ def main() -> None:
         "tier_order": list(TIERS),
         "tiers": tiers,
         "items": rows,
+        "memory": {"cap_share": cap_share, **memshare.build()},
     }
     # bench_ret의 키가 int라 JSON에서 문자열이 된다. 명시적으로 정리한다
     payload["bench"] = {
