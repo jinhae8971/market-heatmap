@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>반도체 · 마켓 히트맵</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#14181d; --line:#232a32; --txt:#e8edf2; --dim:#8b97a4;
+    --up:#e2394a; --upd:#7a2733; --dn:#2e8fd6; --dnd:#1d4a6b; --flat:#2b3138;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:'IBM Plex Sans KR',system-ui,sans-serif;line-height:1.6}
+  .wrap{max-width:760px;margin:0 auto;padding:12px 14px 80px}
+
+  .mode{display:flex;gap:6px;margin-bottom:12px}
+  .mode a{flex:1;text-align:center;padding:8px;border-radius:9px;text-decoration:none;
+    border:1px solid var(--line);background:var(--panel);color:var(--dim);font-size:14px}
+  .mode a.on{background:var(--txt);color:var(--bg);border-color:var(--txt);font-weight:600}
+
+  header{display:flex;align-items:baseline;gap:9px;margin-bottom:4px}
+  h1{font-size:18px;margin:0;letter-spacing:-.02em}
+  .stamp{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--dim)}
+
+  .bench{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:12px 14px;margin:10px 0 18px;display:flex;justify-content:space-between;
+    align-items:center;gap:10px;flex-wrap:wrap}
+  .bench .l{font-size:12.5px;color:var(--dim)}
+  .bench .l b{display:block;color:var(--txt);font-size:15px;font-weight:600}
+  .bench .r{display:flex;gap:14px;font-family:'IBM Plex Mono',monospace;font-size:13px}
+  .bench .r div{text-align:right}
+  .bench .r span{display:block;font-size:9.5px;color:var(--dim);letter-spacing:.06em}
+
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.13em;color:var(--dim);
+    margin:24px 0 4px;font-weight:600}
+  .hint{font-size:12px;color:var(--dim);margin:0 0 12px;line-height:1.55}
+
+  .segs{display:flex;gap:5px;margin:10px 0 12px;overflow-x:auto;scrollbar-width:none}
+  .segs::-webkit-scrollbar{display:none}
+  .seg{flex:none;padding:5px 12px;border-radius:999px;border:1px solid var(--line);
+    background:var(--panel);color:var(--dim);font-size:12.5px;cursor:pointer;
+    font-family:inherit}
+  .seg.on{background:var(--txt);color:var(--bg);border-color:var(--txt);font-weight:600}
+
+  /* 시그니처: 밸류체인 로테이션 — 상류에서 하류로 위에서 아래로 */
+  .chain{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:14px 14px 8px}
+  .row{display:grid;grid-template-columns:74px 1fr 56px;align-items:center;gap:9px;
+    margin-bottom:11px}
+  .row .nm{font-size:12.5px;font-weight:500}
+  .row .nm em{display:block;font-style:normal;font-size:9.5px;color:var(--dim)}
+  .track{position:relative;height:17px;background:#10141a;border-radius:3px}
+  .track .zero{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--line)}
+  .track .b{position:absolute;top:2px;bottom:2px;border-radius:2px}
+  .track .bench{position:absolute;top:-3px;bottom:-3px;width:2px;background:#fff;opacity:.55}
+  .row .v{font-family:'IBM Plex Mono',monospace;font-size:12.5px;text-align:right}
+  .legend{font-size:10.5px;color:var(--dim);font-family:'IBM Plex Mono',monospace;
+    padding-top:2px;border-top:1px solid var(--line);margin-top:2px}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{font-family:'IBM Plex Mono',monospace;font-size:9.5px;text-transform:uppercase;
+    letter-spacing:.07em;color:var(--dim);font-weight:500;text-align:right;
+    padding:7px 4px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap}
+  th:first-child{text-align:left}
+  th.on{color:var(--txt)}
+  td{padding:9px 4px;border-bottom:1px solid var(--line);text-align:right;
+    font-family:'IBM Plex Mono',monospace}
+  td:first-child{text-align:left;font-family:inherit;font-size:13px}
+  tr{cursor:pointer}
+  .flag{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--dim);
+    border:1px solid var(--line);border-radius:3px;padding:0 4px;margin-right:5px}
+  .tierhead td{background:#10141a;font-family:'IBM Plex Mono',monospace;font-size:10px;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--dim);text-align:left;
+    padding:8px 6px}
+
+  #sheet{position:fixed;left:0;right:0;bottom:0;background:var(--panel);
+    border-top:1px solid var(--line);padding:16px 18px calc(20px + env(safe-area-inset-bottom));
+    transform:translateY(102%);transition:transform .25s cubic-bezier(.2,.8,.2,1);z-index:9}
+  #sheet.on{transform:translateY(0)}
+  #sheet .grab{width:34px;height:3px;background:var(--line);border-radius:2px;margin:-6px auto 13px}
+  #sheet h3{margin:0 0 2px;font-size:18px}
+  #sheet .sub{color:var(--dim);font-size:11.5px;font-family:'IBM Plex Mono',monospace;
+    margin-bottom:12px}
+  .kv{display:flex;justify-content:space-between;padding:6px 0;
+    border-bottom:1px solid var(--line);font-size:13px}
+  .kv:last-of-type{border-bottom:0}
+  .kv i{font-style:normal;color:var(--dim)}
+  .kv b{font-family:'IBM Plex Mono',monospace;font-weight:600}
+  #sheet button{margin-top:13px;width:100%;padding:11px;background:none;
+    border:1px solid var(--line);border-radius:9px;color:var(--dim);font-size:13px;cursor:pointer}
+  footer{margin-top:28px;padding-top:12px;border-top:1px solid var(--line);
+    font-size:10.5px;color:var(--dim);font-family:'IBM Plex Mono',monospace;line-height:1.7}
+  @media (prefers-reduced-motion:reduce){#sheet{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mode">
+    <a href="index.html">히트맵</a>
+    <a href="semi.html" class="on">반도체</a>
+  </div>
+
+  <header><h1>반도체 밸류체인</h1><span class="stamp" id="stamp">로딩</span></header>
+
+  <div class="bench" id="bench"></div>
+
+  <h2>계층 로테이션</h2>
+  <p class="hint">위에서 아래로 밸류체인 상류 → 하류. 흰 선은 SOX 지수 위치로,
+     선을 넘으면 업종 대비 초과, 못 미치면 미달이다.</p>
+  <div class="segs" id="periods"></div>
+  <div class="chain" id="chain"></div>
+
+  <h2>종목</h2>
+  <div class="segs" id="sorts"></div>
+  <table><thead id="thead"></thead><tbody id="tbody"></tbody></table>
+
+  <footer id="foot"></footer>
+</div>
+
+<div id="sheet">
+  <div class="grab"></div>
+  <h3 id="s-name">–</h3>
+  <div class="sub" id="s-sub">–</div>
+  <div id="s-rows"></div>
+  <button id="s-close">닫기</button>
+</div>
+
+<script>
+if('serviceWorker' in navigator)
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+
+let D=null, period='d5', sortKey='d1', sortDir=-1, groupByTier=true;
+
+const num=v=>v===null||v===undefined?'–':(v>=0?'+':'')+v.toFixed(2);
+const col=v=>v===null||v===undefined?'var(--dim)':
+  v>1.2?'var(--up)':v>0.05?'#c05262':v<-1.2?'var(--dn)':v<-0.05?'#4a86ad':'var(--dim)';
+const cap=v=>!v?'–':v>=1e12?'$'+(v/1e12).toFixed(2)+'T':'$'+(v/1e9).toFixed(0)+'B';
+
+fetch('semi.json?t='+Date.now()).then(r=>r.json()).then(d=>{
+  D=d;
+  const kst=new Date(d.generated_at).toLocaleString('ko-KR',
+    {timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  document.getElementById('stamp').textContent=kst+' KST';
+
+  const b=d.bench;
+  document.getElementById('bench').innerHTML=`
+    <div class="l">${b.name}<b>${b.level?b.level.toLocaleString():'–'}</b></div>
+    <div class="r">
+      ${[['d1','1일'],['d5','5일'],['d20','20일'],['d60','60일']].map(([k,l])=>
+        `<div style="color:${col(b[k])}">${num(b[k])}%<span>${l}</span></div>`).join('')}
+    </div>`;
+
+  seg('periods',[['d1','1일'],['d5','5일'],['d20','20일']],period,v=>{period=v;chain();});
+  seg('sorts',[['d1','1일'],['d5','5일'],['d20','20일'],['rs20','상대강도'],
+               ['from_high','고점대비'],['fpe','fwd PER'],['tier','계층순']],
+      sortKey,v=>{
+        if(v==='tier'){groupByTier=true;sortKey='tier';}
+        else{groupByTier=false;sortDir=(sortKey===v)?-sortDir:-1;sortKey=v;}
+        table();});
+  sortKey='tier'; groupByTier=true;
+
+  chain(); table();
+  document.getElementById('foot').innerHTML=
+    `상대강도 = 20일 수익률 − SOX 20일 수익률 · 계층 집계는 시총가중<br>`+
+    `생성 ${d.generated_at} · 공개 데이터를 가공한 참고 자료이며 투자 권유가 아닙니다`;
+}).catch(()=>{document.getElementById('stamp').textContent=
+  'semi.json을 불러오지 못했습니다. 수집 워크플로우 실행 후 다시 열어 주세요.';});
+
+function seg(id,opts,cur,cb){
+  const el=document.getElementById(id); el.innerHTML='';
+  opts.forEach(([v,label])=>{
+    const b=document.createElement('button');
+    b.className='seg'+(v===cur?' on':''); b.textContent=label;
+    b.onclick=()=>{[...el.children].forEach(c=>c.classList.remove('on'));
+      b.classList.add('on'); cb(v);};
+    el.appendChild(b);
+  });
+}
+
+function chain(){
+  const rows=D.tier_order.map(t=>D.tiers.find(x=>x.tier===t)).filter(Boolean);
+  const bench=D.bench[period];
+  const vals=rows.map(r=>r[period]).filter(v=>v!==null)
+    .concat(bench===null?[]:[bench]);
+  const max=Math.max(4,...vals.map(Math.abs))*1.1;
+
+  document.getElementById('chain').innerHTML=rows.map(r=>{
+    const v=r[period];
+    if(v===null) return '';
+    const half=Math.abs(v)/max*50;
+    const style=v>=0?`left:50%;width:${half}%`:`right:50%;width:${half}%`;
+    const bp=bench===null?null:50+bench/max*50;
+    return `<div class="row">
+      <div class="nm">${r.tier}<em>${r.count}종목 · ${cap(r.cap_usd)}</em></div>
+      <div class="track"><div class="zero"></div>
+        <div class="b" style="${style};background:${col(v)}"></div>
+        ${bp===null?'':`<div class="bench" style="left:${bp}%"></div>`}</div>
+      <div class="v" style="color:${col(v)}">${num(v)}%</div>
+    </div>`;
+  }).join('')+
+  `<div class="legend">SOX ${num(D.bench[period])}% · 막대 범위 ±${max.toFixed(0)}%</div>`;
+}
+
+const COLS=[['name','종목'],['d1','1일'],['d20','20일'],['rs20','RS'],
+            ['from_high','고점대비'],['fpe','fPER']];
+
+function table(){
+  document.getElementById('thead').innerHTML='<tr>'+COLS.map(([k,l])=>
+    `<th class="${k===sortKey?'on':''}">${l}</th>`).join('')+'</tr>';
+
+  let html='';
+  if(groupByTier){
+    D.tier_order.forEach(t=>{
+      const rows=D.items.filter(r=>r.tier===t)
+        .sort((a,b)=>(b.cap_usd||0)-(a.cap_usd||0));
+      if(!rows.length) return;
+      html+=`<tr class="tierhead"><td colspan="${COLS.length}">${t}</td></tr>`;
+      html+=rows.map(tr).join('');
+    });
+  }else{
+    const rows=[...D.items].sort((a,b)=>{
+      const x=a[sortKey], y=b[sortKey];
+      if(x===null||x===undefined) return 1;
+      if(y===null||y===undefined) return -1;
+      return (x-y)*sortDir;
+    });
+    html=rows.map(tr).join('');
+  }
+  document.getElementById('tbody').innerHTML=html;
+  document.querySelectorAll('#tbody tr[data-s]').forEach(el=>
+    el.onclick=()=>open(el.dataset.s));
+}
+
+function tr(r){
+  return `<tr data-s="${r.sym}">
+    <td><span class="flag">${r.country}</span>${r.short}</td>
+    <td style="color:${col(r.d1)}">${num(r.d1)}</td>
+    <td style="color:${col(r.d20)}">${num(r.d20)}</td>
+    <td style="color:${col(r.rs20)}">${num(r.rs20)}</td>
+    <td style="color:var(--dim)">${r.from_high===null?'–':r.from_high.toFixed(0)}</td>
+    <td style="color:var(--dim)">${r.fpe===null?'–':r.fpe}</td>
+  </tr>`;
+}
+
+function open(sym){
+  const r=D.items.find(x=>x.sym===sym); if(!r) return;
+  document.getElementById('s-name').textContent=r.name;
+  document.getElementById('s-sub').textContent=`${r.sym} · ${r.tier} · ${r.country}`;
+  const kv=(l,v,c)=>`<div class="kv"><i>${l}</i><b style="color:${c||'inherit'}">${v}</b></div>`;
+  document.getElementById('s-rows').innerHTML=
+    kv('현재가',`${r.price.toLocaleString()} ${r.ccy}`)+
+    kv('시가총액',cap(r.cap_usd))+
+    kv('1일',num(r.d1)+'%',col(r.d1))+
+    kv('5일',num(r.d5)+'%',col(r.d5))+
+    kv('20일',num(r.d20)+'%',col(r.d20))+
+    kv('60일',num(r.d60)+'%',col(r.d60))+
+    kv('상대강도 (20일, SOX 대비)',num(r.rs20)+'%p',col(r.rs20))+
+    kv('52주 고점 대비',r.from_high===null?'–':r.from_high+'%')+
+    kv('변동성 (20일 연율)',r.vol20===null?'–':r.vol20+'%')+
+    kv('선행 PER',r.fpe===null?'–':r.fpe)+
+    kv('PBR',r.pbr===null?'–':r.pbr)+
+    kv('매출총이익률',r.gm===null?'–':r.gm+'%');
+  document.getElementById('sheet').classList.add('on');
+}
+document.getElementById('s-close').onclick=()=>
+  document.getElementById('sheet').classList.remove('on');
+</script>
+</body>
+</html>
