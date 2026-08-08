@@ -113,6 +113,7 @@
 </div>
 
 <script>
+const APP_VERSION="1.4.0";
 if('serviceWorker' in navigator)
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js')
     .catch(e=>console.warn('SW 등록 실패',e)));
@@ -130,7 +131,7 @@ fetch('heatmap.json?t='+Date.now()).then(r=>r.json()).then(d=>{
   DATA=d;
   const kst=new Date(d.generated_at).toLocaleString('ko-KR',
     {timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-  document.getElementById('stamp').textContent=kst+' KST';
+  document.getElementById('stamp').textContent=kst+' KST · v'+APP_VERSION;
   stampArea();
   const tabs=document.getElementById('tabs');
   const list=[['ALL','전체'],...Object.entries(d.markets).map(([k,v])=>[k,v.label])];

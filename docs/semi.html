@@ -188,6 +188,7 @@
 </div>
 
 <script>
+const APP_VERSION="1.4.0";
 if('serviceWorker' in navigator)
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 
@@ -231,7 +232,7 @@ fetch('semi.json?t='+Date.now()).then(r=>r.json()).then(d=>{
   initScatter(); scatter(); table();
   document.getElementById('foot').innerHTML=
     `상대강도 = 20일 수익률 − SOX 20일 수익률 · 계층 집계는 시총가중<br>`+
-    `생성 ${d.generated_at} · 공개 데이터를 가공한 참고 자료이며 투자 권유가 아닙니다`;
+    `v${APP_VERSION} · 생성 ${d.generated_at} · 공개 데이터를 가공한 참고 자료이며 투자 권유가 아닙니다`;
 }).catch(()=>{document.getElementById('stamp').textContent=
   'semi.json을 불러오지 못했습니다. 수집 워크플로우 실행 후 다시 열어 주세요.';});
 

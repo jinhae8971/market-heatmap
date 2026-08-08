@@ -107,6 +107,7 @@
 </div>
 
 <script>
+const APP_VERSION="1.4.0";
 if('serviceWorker' in navigator)
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 
@@ -153,7 +154,7 @@ fetch('trend.json?t='+Date.now()).then(r=>r.json()).then(d=>{
 
   document.getElementById('foot').innerHTML=
     `USD 환산 = 현지 지수 ÷ 달러 환율. 원화·엔화가 빠지면 현지 상승분이 깎인다<br>`+
-    `환율 ${Object.entries(d.fx).map(([k,v])=>k+' '+v).join(' · ')} · 생성 ${d.generated_at}`;
+    `환율 ${Object.entries(d.fx).map(([k,v])=>k+' '+v).join(' · ')} · v${APP_VERSION} · 생성 ${d.generated_at}`;
   render();
 }).catch(()=>{document.getElementById('stamp').textContent=
   'trend.json을 불러오지 못했습니다. 수집 워크플로우 실행 후 다시 열어 주세요.';});
