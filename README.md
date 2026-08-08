@@ -47,6 +47,34 @@ python -m unittest discover -s tests
 
 평일 07:00 / 16:30 KST 자동 수집. Pages 소스는 `docs/`.
 
+## 안드로이드 앱
+
+두 가지 방식으로 폰에 설치할 수 있다.
+
+**1) PWA — 설치 없이 즉시**
+크롬에서 대시보드를 열고 메뉴 → *홈 화면에 추가*. 아이콘·스플래시·전체화면이
+적용되고, 서비스워커가 앱 셸을 캐시해 두 번째 실행부터는 즉시 뜬다.
+시세(`heatmap.json`)만 항상 네트워크를 먼저 친다 — 히트맵은 오래된 숫자를
+보여주는 게 안 보여주는 것보다 나쁘기 때문이다.
+
+**2) APK — `release/market-heatmap-1.0.apk`**
+`android/`에 네이티브 셸이 있다. WebView로 Pages를 띄우는 구조라, 유니버스나
+시각화를 고칠 때 APK를 다시 빌드할 필요 없이 레포에 푸시만 하면 다음 실행에
+반영된다. 앱이 직접 담당하는 건 오프라인 재시도 UI, 뒤로가기 히스토리 연결,
+복귀 시 새로고침 세 가지뿐이다.
+
+```
+package  com.jinhae.heatmap
+minSdk   24 (Android 7.0)  ·  targetSdk 34
+크기     21KB
+```
+
+설치: APK를 폰으로 옮긴 뒤 *출처를 알 수 없는 앱 설치* 허용 후 실행.
+재빌드: `ANDROID_HOME=<SDK경로> ./android/build.sh`
+
+Gradle을 쓰지 않는다. 액티비티 하나에 외부 의존성이 0개라
+`aapt2 → javac → d8 → zipalign → apksigner` 다섯 단계면 끝난다.
+
 ## 다음 단계
 
 - 배당수익률 뷰 — `fast_info`에는 없어 별도 소스 필요
