@@ -33,7 +33,7 @@ OUT = "docs/sentiment.json"
 # 롤링 250일 백분위는 첫 1년치를 소모하기 때문이다.
 LOOKBACK = "8y"   # 롤링 2년 백분위가 첫 2년을 소모하므로 5년 추이엔 8년이 필요하다
 HIST_DAYS = 1260         # 약 5년(거래일)
-BENCH_IDX = {"미국": "^IXIC", "한국": "^KS11"}
+BENCH_IDX = {"미국": "^IXIC", "한국": "^KS11", "반도체": "^SOX"}
 
 # 비율형 구성요소: (이름, 분자, 분모, 설명)
 RATIOS_US = [
@@ -56,6 +56,27 @@ LEV_KR = ("122630.KS", "114800.KS")
 
 # 실현변동성 — VKOSPI를 무료로 받을 수 없어 지수 자체의 20일 변동성으로 대신한다
 RV_KR = "^KS11"
+
+# 반도체 — 업종 하나를 따로 보는 이유는, 지수 센티멘트가 좋아도
+# 이 업종만 이탈하는(또는 그 반대인) 국면이 자주 나오기 때문이다.
+RATIOS_SEMI = [
+    ("반도체 / S&P 500", "SOXX", "SPY", "업종으로 돈이 오는가"),
+    ("장비 / 팹리스", "AMAT", "NVDA", "상류가 하류를 따라오는가"),
+    ("메모리 / 로직", "MU", "AVGO", "사이클 민감 구간 선호"),
+    ("반도체 / 금", "SOXX", "GC=F", "안전자산 대비 업종 선호"),
+]
+
+# 3배 롱/숏 ETF 거래대금 비율 — 반도체는 개인 레버리지 수요가 가장 몰리는 업종이다
+LEV_SEMI = ("SOXL", "SOXS")
+
+# 쏠림도: 엔비디아 / 업종. 하나가 끌면 폭이 좁다는 뜻이라 역방향으로 쓴다
+CONC_SEMI = ("NVDA", "SOXX")
+
+RV_SEMI = "SOXX"
+
+SEMI_BREADTH = ["NVDA", "AMD", "AVGO", "QCOM", "INTC", "MU", "TSM", "TXN",
+                "AMAT", "LRCX", "KLAC", "MRVL", "ASML.AS", "8035.T", "6857.T",
+                "005930.KS", "000660.KS"]
 
 VOL_US = "^VIX"
 FX_KR = "KRW=X"          # 원화 약세 = 위험회피
@@ -195,6 +216,32 @@ def build_market(name: str, px: pd.DataFrame, ratios, breadth_syms,
                               "value": round(float(f.iloc[-1]), 1), "d20": None})
         except KeyError:
             pass
+
+    if name == "반도체":
+        lev = lev_ratio(px, vol_df, *LEV_SEMI) if vol_df is not None else None
+        if lev is not None:
+            r = pct_rank(lev)
+            if r is not None:
+                comps.append({"label": "SOXL / SOXS", "score": r,
+                              "note": "3배 롱·숏 ETF 거래대금 비율",
+                              "value": round(float(lev.iloc[-1]) * 100, 1), "d20": None})
+        conc = ratio_series(px, *CONC_SEMI)
+        if conc is not None:
+            r = pct_rank(conc)
+            if r is not None:
+                # 한 종목이 업종을 끌면 폭이 좁다 — 탐욕이 아니라 취약함이다
+                comps.append({"label": "엔비디아 쏠림", "score": round(100 - r, 1),
+                              "display": r, "invert": True,
+                              "note": "엔비디아 / 반도체ETF · 높을수록 쏠림",
+                              "value": round(float(conc.iloc[-1]), 4), "d20": None})
+        rv = realized_vol(px, RV_SEMI)
+        if rv is not None:
+            r = pct_rank(rv)
+            if r is not None:
+                comps.append({"label": "변동성", "score": round(100 - r, 1),
+                              "display": r, "invert": True,
+                              "note": f"반도체ETF 20일 연율 {float(rv.iloc[-1]):.0f}% · 높을수록 공포",
+                              "value": round(float(rv.iloc[-1]), 1), "d20": None})
 
     if name == "한국":
         lev = lev_ratio(px, vol_df, *LEV_KR) if vol_df is not None else None
@@ -353,14 +400,17 @@ def main() -> None:
     us_syms = [t[0] for t in universe.US][:30]
 
     need = sorted({s for _, a, b, _ in RATIOS_US + RATIOS_KR for s in (a, b)}
-                  | {VOL_US, FX_KR, RV_KR} | set(LEV_KR) | set(BENCH_IDX.values())
-                  | set(kr_syms) | set(us_syms))
+                  | {s for _, a, b, _ in RATIOS_SEMI for s in (a, b)}
+                  | {VOL_US, FX_KR, RV_KR, RV_SEMI} | set(LEV_KR) | set(LEV_SEMI)
+                  | set(CONC_SEMI) | set(BENCH_IDX.values())
+                  | set(kr_syms) | set(us_syms) | set(SEMI_BREADTH))
     raw = yf.download(need, period=LOOKBACK, progress=False, auto_adjust=True)
     px = raw["Close"]
     vol_df = raw["Volume"]
 
     us = build_market("미국", px, RATIOS_US, us_syms, VOL_US, None)
     kr = build_market("한국", px, RATIOS_KR, kr_syms, None, FX_KR, vol_df)
+    se = build_market("반도체", px, RATIOS_SEMI, SEMI_BREADTH, None, None, vol_df)
 
     # 추이는 현재 점수와 같은 구성요소로 만든다.
     # 예전에는 추이가 비율 4개만 써서, 하나가 극단으로 가면 종합이 수직으로 튀었다.
@@ -376,20 +426,33 @@ def main() -> None:
     except KeyError:
         pass
 
+    se_extra = []
+    slev = lev_ratio(px, vol_df, *LEV_SEMI)
+    if slev is not None:
+        se_extra.append(roll_pct(slev))
+    sconc = ratio_series(px, *CONC_SEMI)
+    if sconc is not None:
+        se_extra.append(100 - roll_pct(sconc))
+    srv = realized_vol(px, RV_SEMI)
+    if srv is not None:
+        se_extra.append(100 - roll_pct(srv))
+
     hist = {"미국": history(px, RATIOS_US, VOL_US, BENCH_IDX["미국"],
                           breadth_syms=us_syms),
             "한국": history(px, RATIOS_KR, None, BENCH_IDX["한국"],
-                          extra=kr_extra, breadth_syms=kr_syms)}
+                          extra=kr_extra, breadth_syms=kr_syms),
+            "반도체": history(px, RATIOS_SEMI, None, BENCH_IDX["반도체"],
+                           extra=se_extra, breadth_syms=SEMI_BREADTH)}
 
     # 현재 점수 = 추이의 마지막 값. 두 곳에서 따로 계산하면 반드시 어긋난다.
-    for m in (us, kr):
+    for m in (us, kr, se):
         h = hist.get(m["name"]) or []
         if h:
             m["score"] = h[-1]["v"]
 
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "markets": [us, kr],
+        "markets": [us, kr, se],
         "history": hist,
         "stats": {k: forward_stats(v) for k, v in hist.items()},
         "bench_idx": BENCH_IDX,
@@ -406,7 +469,7 @@ def main() -> None:
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, OUT)
-    print(f"완료: 미국 {us['score']} / 한국 {kr['score']} → {OUT}")
+    print(f"완료: 미국 {us['score']} / 한국 {kr['score']} / 반도체 {se['score']} → {OUT}")
 
 
 if __name__ == "__main__":
