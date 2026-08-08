@@ -178,8 +178,9 @@ def build_market(name: str, px: pd.DataFrame, ratios, breadth_syms,
         if rv is not None:
             r = pct_rank(rv)
             if r is not None:
-                # 실현변동성이 비정상적으로 크면 데이터 이상일 수 있다.
-                # 최근 최대 일간 변동을 함께 실어 화면에서 판단할 수 있게 한다.
+                # 변동성이 극단일 때는 최대 일간 변동을 함께 실어 준다.
+                # 처음엔 데이터 오류를 의심했으나 실제 값으로 확인됐다(2026-08).
+                # 이상해 보이는 값을 임의로 깎지 않는다 — 그 극단 자체가 신호다.
                 try:
                     mx = float(px[RV_KR].dropna().pct_change().tail(20).abs().max() * 100)
                 except Exception:
@@ -187,8 +188,8 @@ def build_market(name: str, px: pd.DataFrame, ratios, breadth_syms,
                 comps.append({"label": "실현변동성 (역방향)", "score": round(100 - r, 1),
                               "note": "코스피 20일 변동성 (VKOSPI 대용)",
                               "value": round(float(rv.iloc[-1]), 1), "d20": None,
-                              "flag": (None if mx is None or mx < 8
-                                       else f"최근 20일 최대 일간 변동 {mx:.1f}% — 데이터 확인 필요")})
+                              "flag": (None if mx is None or mx < 6
+                                       else f"최근 20일 최대 일간 변동 {mx:.1f}%")})
 
     ma, adv = breadth(px, breadth_syms)
     if ma is not None:
